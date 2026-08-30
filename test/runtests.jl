@@ -646,6 +646,107 @@ using Statistics
         @test occursin("Beta-Binomial", String(take!(io)))
     end
 
+    @testset "log_vote_rate — valores analíticos e exclusões" begin
+        # ν = log((N−W)/W): com W = N/2 dá log(1) = 0
+        @test log_vote_rate([50], [100]) ≈ [0.0]
+        # W = N/4 ⇒ log(3)
+        @test log_vote_rate([25], [100]) ≈ [log(3.0)]
+        # W = 3N/4 ⇒ log(1/3)
+        @test log_vote_rate([75], [100]) ≈ [log(1/3)]
+        # exclusões do artigo: W = 0 e W ≥ N não têm ν definido
+        @test isempty(log_vote_rate([0], [100]))
+        @test isempty(log_vote_rate([100], [100]))
+        @test isempty(log_vote_rate([120], [100]))
+        @test length(log_vote_rate([0, 50, 100, 25], [100, 100, 100, 100])) == 2
+        @test_throws DimensionMismatch log_vote_rate([1, 2], [10])
+    end
+
+    @testset "_skewness / _kurtosis — valores analíticos" begin
+        sk, ku = ElectionForensics._skewness, ElectionForensics._kurtosis
+        # simétrico ⇒ assimetria 0
+        @test sk([-2.0, -1, 0, 1, 2]) ≈ 0 atol = 1e-12
+        # normal padrão grande ⇒ (0, 3)
+        z = randn(MersenneTwister(7), 200_000)
+        @test sk(z) ≈ 0 atol = 0.03
+        @test ku(z) ≈ 3 atol = 0.05
+        # uniforme ⇒ curtose 9/5
+        u = rand(MersenneTwister(8), 200_000)
+        @test ku(u) ≈ 1.8 atol = 0.03
+        # constante ⇒ NaN (desvio nulo)
+        @test isnan(sk(fill(1.0, 5)))
+    end
+
+    @testset "election_fingerprint — eixos exatos" begin
+        # comparecimento V/N e taxa W/N conferidos à mão
+        W = [30, 60]; V = [50, 80]; N = [100, 100]
+        r = election_fingerprint(W, V, N)
+        @test r.turnout ≈ [0.5, 0.8]
+        @test r.vote_rate ≈ [0.3, 0.6]          # :electorate (default, como no artigo)
+        r2 = election_fingerprint(W, V, N; vote_axis = :valid)
+        @test r2.vote_rate ≈ [0.6, 0.75]        # W/V
+        @test sum(r.counts) == r.m == 2
+        @test r.n_excluded == 0
+
+        # seções incoerentes são descartadas, não erram
+        r3 = election_fingerprint([30, 90], [50, 80], [100, 100])   # W > V na 2ª
+        @test r3.m == 1
+        @test r3.n_excluded == 1
+
+        @test_throws DimensionMismatch election_fingerprint([1], [1], [1, 2])
+        @test_throws ArgumentError election_fingerprint(Int[], Int[], Int[])
+        @test_throws ArgumentError election_fingerprint([1], [2], [3]; bins = 1)
+        @test_throws ArgumentError election_fingerprint([1], [2], [3]; vote_axis = :bogus)
+        @test_throws ArgumentError election_fingerprint([5], [5], [0])
+    end
+
+    @testset "election_fingerprint — limpo vs. fraude extrema" begin
+        rng = seed("election_fingerprint — limpo vs. fraude extrema")
+        m = 4000
+        N = rand(rng, 800:2500, m)
+        a = clamp.(rand(rng, Normal(0.62, 0.09), m), 0.05, 0.99)
+        sh = clamp.(rand(rng, Normal(0.48, 0.10), m), 0.02, 0.98)
+        V = [round(Int, N[i] * a[i]) for i in 1:m]
+        W = [round(Int, V[i] * sh[i]) for i in 1:m]
+
+        limpo = election_fingerprint(W, V, N)
+        # Klimek et al., Fig. 3: eleições limpas em torno de (0, 3)
+        @test abs(limpo.skewness) < 0.4
+        @test 2.5 < limpo.kurtosis < 3.8
+        nb = size(limpo.counts, 1); q = ceil(Int, 0.95nb)
+        @test sum(@view limpo.counts[q:nb, q:nb]) == 0     # canto vazio
+
+        # fraude extrema: 6 % das seções com comparecimento e voto quase totais
+        Vf, Wf = copy(V), copy(W)
+        for i in 1:round(Int, 0.06m)
+            Vf[i] = N[i]
+            Wf[i] = round(Int, 0.99 * N[i])
+        end
+        sujo = election_fingerprint(Wf, Vf, N)
+        @test sum(@view sujo.counts[q:nb, q:nb]) > 0.04m   # segundo aglomerado
+        @test abs(sujo.skewness) > abs(limpo.skewness)
+        @test sujo.kurtosis > limpo.kurtosis
+
+        io = IOBuffer(); show(io, MIME"text/plain"(), sujo)
+        saida = String(take!(io))
+        @test occursin("Klimek", saida)
+        @test occursin("canto", saida)
+    end
+
+    @testset "election_fingerprint — Tables.jl" begin
+        rng = seed("election_fingerprint — Tables.jl")
+        m = 1000
+        N = rand(rng, 500:1500, m)
+        V = [round(Int, N[i] * (0.5 + 0.2rand(rng))) for i in 1:m]
+        W = [round(Int, V[i] * (0.3 + 0.4rand(rng))) for i in 1:m]
+        r = election_fingerprint(W, V, N; bins = 20)
+        @test Tables.istable(typeof(r))
+        linhas = Tables.rows(r)
+        @test keys(first(linhas)) == Tables.schema(r).names
+        @test all(l -> l.count > 0, linhas)
+        @test sum(l.count for l in linhas) == r.m
+        @test all(l -> 0 ≤ l.turnout ≤ 1 && 0 ≤ l.vote_rate ≤ 1, linhas)
+    end
+
     @testset "Aqua" begin
         Aqua.test_all(ElectionForensics)
     end

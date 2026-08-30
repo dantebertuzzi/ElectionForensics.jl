@@ -135,6 +135,29 @@ diagnóstico `misfit`: a maior razão observado/predito entre as faixas de
 percentual com massa não desprezível. Acima de 2 o pacote avisa. Nos dados
 russos ele marca 2,57 na faixa [0,20, 0,25) — exatamente onde estão 1/5 e 1/4.
 
+## O fingerprint não é um teste
+
+[`election_fingerprint`](@ref) não produz p-valor, e assimetria/curtose
+isoladas não são teste de hipótese: com dezenas de milhares de seções qualquer
+desvio ínfimo da normalidade rende uma estatística enorme. Klimek et al. as
+usam como descrição comparativa entre países, e é assim que devem ser lidas.
+
+Reprodução da Fig. 3 do artigo com dados reais
+(`validation/22_fingerprint.jl`):
+
+| Pleito | Assimetria de ν | Curtose | Canto ≥95 %/≥95 % |
+|---|---|---|---|
+| simulada limpa (20 000 seções) | +0,13 | 3,22 | 0 |
+| EUA 2020 · Illinois | **−0,01** | **3,00** | 0 |
+| EUA 2020 · Alabama | +1,53 | 4,78 | 0 |
+| Rússia 2012 | **−2,15** | **9,12** | **2 677 (2,81 %)** |
+
+Illinois cai em cima do (0, 3) previsto. Alabama se afasta sem nenhuma seção no
+canto — o artigo atribui desvios assim a heterogeneidade da população (o
+exemplo dele é o Canadá), e aqui há ainda viés de subamostra, porque só 1 204
+dos 2 110 precincts publicam eleitorado. A Rússia mostra as duas assinaturas
+que o artigo descreve.
+
 ## Multiplicidade
 
 `RozenasResult` reporta excessos por fração. Sob H₀, o maior z entre as 31

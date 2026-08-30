@@ -33,3 +33,4 @@ julia --project=. -t auto validation/01_calibracao_benford.jl
 | `19_valida_calibration_check.jl` | `calibration_check` acerta a taxa que prevê? | sim: 0,372 medido vs 0,364 previsto no pior regime |
 | `20_concorrentes.py` | as bibliotecas existentes acusam eleições legítimas? | sim: 66–97 % dos 29 pleitos, contra 0 % do null reamostrado |
 | `21_nula_betabinomial.jl` | a nula Beta-Binomial do `spikes` é melhor? | em simulação, equivalente; em dados reais, desajusta a cauda e inventa 10 frações |
+| `22_fingerprint.jl` | reproduz a Fig. 3 de Klimek et al. (2012) | Illinois em (−0,01; 3,00); Rússia em (−2,15; 9,12) com 2,81 % das seções no canto |
