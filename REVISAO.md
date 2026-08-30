@@ -1,15 +1,22 @@
 # Revisão técnica — ElectionForensics.jl
 
 **Revisor:** auditoria de engenharia de pacotes Julia + estatística forense eleitoral
-**Commit:** `590903f` (+ `test/runtests.jl` modificado no working tree)
+**Commit auditado:** `590903f` · **Correções:** `051d375` (branch `revisao-correcoes`)
 **Data:** 2026-08-29 · **Julia:** 1.12.7 (também verificado em 1.10 LTS e 1.6.7)
-**Scripts de evidência:** `validation/` · **Patches:** `validation/correcoes.patch`
+**Scripts de evidência:** `validation/` (16 scripts reexecutáveis)
 
 ---
 
 ## 1. Veredito
 
-> ## `NÃO APTO` para release
+> ## Antes: `NÃO APTO` · Depois das correções: `APTO COM RESSALVAS`
+
+**Todas as correções foram aplicadas e commitadas** na branch
+`revisao-correcoes`. Dos 26 achados, 25 estão fechados e 1 continua parcial
+(M3). O que segue descreve o pacote **como auditado** (`590903f`); o estado
+atual está na seção 5.
+
+### O diagnóstico original
 
 Dois dos quatro testes da bateria são **anti-conservadores por construção**: no
 DGP eleitoral mais comum no Brasil (seções de tamanho homogêneo), o teste do
@@ -18,12 +25,22 @@ Benford 2BL em **72 %** — e ambos são executados por default em
 `forensics_report`. Um pacote de forense eleitoral que acusa fraude em dados
 limpos com essa frequência não pode ser publicado no General Registry.
 
-A boa notícia: **a engenharia está correta e as correções são localizadas.** A
-maquinaria χ², as probabilidades de Benford, os limiares de Nigrini, a fórmula
+A boa notícia: **a engenharia estava correta e as correções eram localizadas.**
+A maquinaria χ², as probabilidades de Benford, os limiares de Nigrini, a fórmula
 do p-valor Monte Carlo e o teste de Rozenas conferem com a literatura e com
-implementações independentes. Os patches em `validation/correcoes.patch` já
-foram aplicados e verificados: 105/105 testes passam, `Aqua.test_all` limpo, e a
-taxa de erro tipo I da 2BL cai de 0,72 para 0,058.
+implementações independentes.
+
+### As ressalvas que permanecem
+
+1. **M3 (parcial).** O teste do último dígito continua levemente
+   anti-conservador — 0,082 contra α = 0,05 — quando a distribuição de
+   percentuais é fortemente bimodal e muitas contagens ficam entre 10 e 30. Um
+   aviso é emitido, mas o teste roda.
+2. **Nada foi validado contra um pleito real.** Toda a calibração é por
+   simulação; o CDN do TSE bloqueia clientes não-browser deste ambiente.
+3. **As correções são minhas, não revisadas por terceiro.** Foram verificadas
+   por execução (178 testes, Aqua, JET, Documenter, Julia 1.10 e 1.12), mas
+   passaram por um único par de olhos.
 
 ### Escopo: o briefing não bate com o repositório
 
@@ -142,104 +159,95 @@ como está.
 
 ---
 
-## 5. Patches
+## 5. Estado após as correções
 
-Todos os patches de severidade Crítica e Alta estão em
-**`validation/correcoes.patch`** (1 010 linhas, 13 arquivos). Foram aplicados a
-uma cópia limpa e verificados:
+Commit `051d375` na branch `revisao-correcoes`. Verificado por execução:
 
 ```
 Test Summary:        | Pass  Total   Time
-ElectionForensics.jl |  105    105  25.4s
+ElectionForensics.jl |  178    178  35.1s     (era 76)
      Testing ElectionForensics tests passed
 ```
 
-`Aqua.test_all(ElectionForensics)` passa **sem exclusões** (era 2 falhas).
+`Aqua.test_all` sem exclusões · JET sem relatórios em código do pacote ·
+Documenter compila com `checkdocs = :exports` e `doctest = true` ·
+178/178 também em Julia 1.10 LTS, do zero.
 
-### Verificação empírica dos patches
+### Calibração do código entregue (α = 0,05, m = 2000)
 
-| Métrica | Antes | Depois |
+| Cenário (eleições **limpas**) | 2BL antes | 2BL depois | Últ. dígito | Rozenas |
+|---|---|---|---|---|
+| totals 200–400 (caso TSE) | **0,710** | **0,054** | 0,050 | 0,050 |
+| totals 150–900 | 0,332 | 0,038 | 0,052 | 0,048 |
+| shares Beta(0.5, 0.5) | — | 0,064 | 0,052 | 0,052 |
+| shares Beta(0.3, 0.3) | — | 0,050 | **0,082** ⚠️ | 0,030 |
+
+O penúltimo dígito saiu do default: era 0,503 e 1,000 nos dois primeiros
+cenários.
+
+### Poder do teste de Rozenas (metas redondas)
+
+| ε | Beta(8,6) antes | Beta(8,6) depois | Beta(0.5,0.5) antes | Beta(0.5,0.5) depois |
+|---|---|---|---|---|
+| 0,00 | 0,040 | 0,034 | 0,036 | 0,036 |
+| 0,01 | 0,196 | 0,188 | 0,168 | **0,288** |
+| 0,02 | 0,472 | **0,540** | 0,480 | **0,700** |
+| 0,05 | 0,988 | 0,988 | 0,986 | **1,000** |
+
+### M5: minha hipótese original estava errada
+
+No relatório inicial atribuí o conservadorismo do teste de Rozenas à **dupla
+adição de ruído binomial** e propus a correção de variância de Silverman &
+Young (1987). O experimento (`validation/15_rozenas_escala.jl`) refutou isso:
+
+| dist. de shares | atual | `shrink` (minha proposta) | banda menor | **logit** |
+|---|---|---|---|---|
+| Beta(0.5, 0.5) | 0,012 | 0,012 | 0,032 | **0,036** |
+| Beta(0.3, 0.3) | 0,000 | 0,002 | 0,016 | **0,030** |
+| poder ε = 2 % | 0,480 | 0,424 | 0,638 | **0,666** |
+
+A correção de variância não move nada — o desvio que ela corrige é de ~3 %. A
+causa real é a **banda global vazando nas fronteiras**: com `h ≈ 0,07` sob
+Beta(0.3,0.3), o jitter empurra seções quase unânimes para o miolo, onde as
+frações coarse são densas. Na escala logit o passo encolhe sozinho perto de 0 e
+1. A correção implementada é essa, não a que eu havia proposto.
+
+### Achados fechados nesta rodada
+
+| Sev. | # | O que foi feito |
 |---|---|---|
-| 2BL, erro tipo I, seções 200–400 (TSE) | **0,710** | **0,058** |
-| 2BL, erro tipo I, seções 150–900 | 0,332 | 0,038 |
-| 2BL, erro tipo I, totais LN(6, 1.2) | 0,062 | 0,048 |
-| Penúltimo dígito no `forensics_report` | roda por default | opt-in + `null_valid` |
-| Rozenas, poder (metas redondas, ε=5 %) | 0,988 | **0,988** (preservado) |
-| Rozenas, poder (ε=2 %) | 0,472 | 0,510 |
-| Frações com q < 0,05 em eleições limpas | 1,14 com z > 2 | **0,000** |
+| 🔴 | C1 | `:penultimate` opt-in, campo `null_valid`, aviso e docstring corrigida |
+| 🔴 | C2 | `null = :resampled` como default; `:benford` mantido como descritivo |
+| 🟠 | A1 | `Manifest.toml` desversionado + `.gitignore` |
+| 🟠 | A2 | `[compat]` para `Printf`, `Random`, `Statistics`, `Tables`, `Test` |
+| 🟠 | A3 | Exemplo do README corrigido |
+| 🟠 | A4 | Campo `qvalues` (Benjamini–Hochberg) exibido ao lado do z |
+| 🟠 | A5 | `clamp` → reflexão, depois superado pela escala logit |
+| 🟠 | A6 | CI (3 SOs × 3 versões), TagBot, CompatHelper, `docs/` que compila |
+| 🟠 | A7 | Docstrings nos três tipos exportados |
+| 🟡 | M1 | Regra de Cochran (`min_expected`) com aviso |
+| 🟡 | M2 | Uma semente por testset; asserções sobre taxa; valores analíticos |
+| 🟡 | M4 | Coerção explícita: `Float64` inteiro ok, fracionário e `NaN` erram, `missing` exige `skipmissing` |
+| 🟡 | M5 | Jitter na escala logit (`boundary = :logit`) |
+| 🟡 | M6 | Aviso para `m < 30` |
+| 🟡 | M7 | `_H_FLOOR` nomeado; `_silverman` devolve `(h, degenerate)` |
+| 🟡 | M8 | README qualifica a aproximação e remete aos `qvalues` |
+| 🟡 | M9 | Interface Tables.jl nos três resultados, com `schema` explícito |
+| 🟡 | M10 | `forensics_report` pula testes inaplicáveis em vez de abortar |
+| 🟡 | M11 | O `show` explica por que MAD e χ² podem discordar |
+| 🟢 | B1 | Fronteiras de Nigrini fechadas no limite superior |
+| 🟢 | B2 | `_digit_counts!` parametrizado — sem `Union` de tipos de função |
+| 🟢 | B3 | PNGs desversionados |
+| 🟢 | B4 | `warn` como keyword |
+| 🟢 | B5 | Chave `(num, den)` no lugar de `hash(::Rational)` no laço quente |
+| 🟢 | B6 | `min_value` abaixo do mínimo estrutural agora é erro |
 
-### Resumo dos diffs
+### O que continua aberto
 
-**`src/benford.jl`** — introduz `Base.@kwdef struct BenfordConfig` (`digit`,
-`null`, `B`, `log_bandwidth`, `min_n`, `min_expected`, `warn`), o null
-reamostrado `_resampled_pvalue`, o campo `pvalue_asymptotic` e a checagem de
-Cochran:
-
-```diff
-+Base.@kwdef struct BenfordConfig
-+    digit::Int = 2
-+    null::Symbol = :resampled
-+    B::Int = 999
-+    log_bandwidth::Float64 = 0.05
-+    min_n::Int = 100
-+    min_expected::Float64 = 5.0
-+    warn::Bool = true
-+end
-+
-+# null reamostrado: jitter gaussiano em log10 apaga a estrutura do dígito
-+# preservando o formato macro da distribuição de contagens.
-+function _resampled_pvalue(v, digit, expected, chi_obs, cfg, rng)
-+    ...
-+            y = round(Int, 10^(lv[rand(rng, 1:n)] + cfg.log_bandwidth * randn(rng)))
-```
-
-**`src/lastdigit.jl`** — `Base.@kwdef struct DigitTestConfig`,
-`_orders_of_magnitude`, campo `null_valid` e aviso:
-
-```diff
-+_orders_of_magnitude(v) =
-+    log10(quantile(Float64.(v), 0.95) / max(quantile(Float64.(v), 0.05), 1.0))
-...
-+    null_valid = cfg.position === :last ? true : oom ≥ 2.0
-+        if cfg.position === :penultimate && !null_valid
-+            @warn "null uniforme do penúltimo dígito NÃO é válido para estes \
-+                dados: contagens cobrem $(round(oom, digits = 2)) décadas (< 2)."
-```
-
-**`src/rozenas.jl`** — reflexão na fronteira e q-valores BH:
-
-```diff
--            p = clamp(shares[i] + hval * randn(rng), 0.0, 1.0)
-+            # reflexão nas fronteiras: `clamp` empilharia massa exatamente em
-+            # 0 e 1, onde Binomial degenera e nunca produz fração coarse — com
-+            # shares em U (eleições polarizadas) isso atingia 22 % dos sorteios
-+            # e distorcia a nula (validation/05_rozenas_clamp.jl).
-+            p = shares[i] + hval * randn(rng)
-+            while p < 0.0 || p > 1.0
-+                p < 0.0 && (p = -p)
-+                p > 1.0 && (p = 2.0 - p)
-+            end
-...
-+    praw = [(1 + count(≥(observed[j]), @view null_counts[:, j])) / (B + 1) for j in 1:J]
-+    qvalues = _bh_adjust(praw)
-```
-
-**`src/report.jl`** — `penultimate::Bool = false`, `benford_null = :resampled`,
-validação de entrada e um bloco `!!! warning` sobre o que a bateria **não**
-detecta.
-
-**`src/utils.jl`** — `_bh_adjust` (Benjamini–Hochberg, com monotonicidade
-forçada e testado contra valores analíticos).
-
-Aplicar com:
-
-```bash
-git rm --cached Manifest.toml
-git apply validation/correcoes.patch
-julia --project=. -e 'using Pkg; Pkg.test()'
-```
-
----
+| Sev. | # | Situação |
+|---|---|---|
+| 🟡 | M3 | **Parcial.** Aviso de dispersão e guarda de `min_value` adicionados, mas o teste do último dígito ainda roda e chega a 0,082 sob shares bimodais. Fechar exigiria um null reamostrado próprio ou um filtro por `sd`. |
+| — | — | Dados reais do TSE: `HTTP 403` deste ambiente. Script pronto em `validation/14_dados_reais_tse.jl`. |
 
 ## 6. Eixo D — a suíte de testes
 
@@ -285,38 +293,38 @@ O patch leva a suíte a 105 asserções, adicionando: valores analíticos para
 **Project.toml e metadados**
 - [x] `name`, `uuid`, `version` presentes e coerentes
 - [x] `[compat]` para `Distributions` e `julia`
-- [ ] → [x] `[compat]` para `Printf`, `Random`, `Statistics`, `Test` *(patch)*
+- [x] `[compat]` para `Printf`, `Random`, `Statistics`, `Test` *(patch)*
 - [x] `[extras]` / `[targets]` de teste declarados
 - [n/a] `[weakdeps]` / `[extensions]` — o pacote não tem extensões
 - [x] `julia = "1.6"` **verificado** (76/76 em 1.6.7) — o patch sobe para `"1.10"` (LTS atual)
-- [ ] → [x] `Manifest.toml` fora do controle de versão *(patch)*
-- [ ] → [x] `.gitignore` *(patch)*
+- [x] `Manifest.toml` fora do controle de versão *(patch)*
+- [x] `.gitignore` *(patch)*
 
 **Documentação**
 - [x] `LICENSE` presente (MIT)
 - [x] README com seção de métodos e referências
-- [ ] → [x] README com exemplo **executável** *(patch: `max_denom` corrigido)*
+- [x] README com exemplo **executável** *(patch: `max_denom` corrigido)*
 - [x] Docstrings nas 9 funções exportadas
-- [ ] → [x] Docstrings nos 3 tipos exportados *(patch)*
-- [ ] `docs/` com Documenter — **ausente**, não corrigido pelo patch
-- [ ] Doctests — nenhum docstring tem bloco `jldoctest`
-- [ ] CHANGELOG
+- [x] Docstrings nos 3 tipos exportados *(patch)*
+- [x] `docs/` com Documenter — criado, compila com `checkdocs = :exports`
+- [x] Doctests — `docs/src/index.md` tem `jldoctest`, rodam no build e na CI
+- [x] CHANGELOG
 
 **CI**
-- [ ] → [x] Matriz Julia (1.10 LTS, 1, pre) *(patch)*
-- [ ] → [x] Múltiplos SOs (Linux, macOS, Windows) *(patch)*
-- [ ] → [x] TagBot, CompatHelper *(patch)*
-- [ ] → [x] Cobertura (Codecov) *(patch)*
-- [ ] Job de doctests configurado mas sem `docs/` para rodar
+- [x] Matriz Julia (1.10 LTS, 1, pre) *(patch)*
+- [x] Múltiplos SOs (Linux, macOS, Windows) *(patch)*
+- [x] TagBot, CompatHelper *(patch)*
+- [x] Cobertura (Codecov) *(patch)*
+- [x] Job de doctests com `docs/` presente
 
 **Qualidade**
 - [x] `Aqua`: ambiguidades, pirataria, deps obsoletas, exports — limpo
-- [ ] → [x] `Aqua`: `[compat]` *(patch)*
+- [x] `Aqua`: `[compat]` *(patch)*
 - [x] `JET`: nada em código do pacote
 - [x] `] test` passa do zero em ambiente limpo (1.6.7, 1.10.12, 1.12.7)
 - [x] Precompila sem warnings
 - [x] Tempo de carga aceitável (0,38 s)
-- [ ] → [x] `@warn` suprimível *(patch: keyword `warn`)*
+- [x] `@warn` suprimível *(patch: keyword `warn`)*
 
 **Correção estatística**
 - [x] Probabilidades de Benford conferidas contra a literatura
@@ -324,17 +332,19 @@ O patch leva a suíte a 105 asserções, adicionando: valores analíticos para
 - [x] Referência cruzada com `scipy` (Δ ≤ 2,8 × 10⁻¹²)
 - [x] p-valor Monte Carlo com a convenção correta
 - [x] RNG reprodutível, sem dependência de threads
-- [ ] → [x] Calibração sob H₀ da 2BL *(patch: 0,710 → 0,058)*
-- [ ] → [x] Penúltimo dígito fora do default *(patch)*
-- [ ] → [x] Multiplicidade nas frações *(patch: BH)*
-- [ ] Conservadorismo residual do Rozenas sob shares em U — **não corrigido**, ver M5
-- [ ] Retornos compatíveis com Tables.jl — **não implementado**, ver M9
+- [x] Calibração sob H₀ da 2BL *(patch: 0,710 → 0,058)*
+- [x] Penúltimo dígito fora do default *(patch)*
+- [x] Multiplicidade nas frações *(patch: BH)*
+- [x] Conservadorismo do Rozenas sob shares em U — corrigido pela escala logit (0,000 → 0,030; poder 0,48 → 0,70)
+- [x] Retornos compatíveis com Tables.jl — os três tipos, com `schema` explícito
+
+- [ ] **M3 residual:** último dígito a 0,082 sob shares bimodais (aviso emitido)
 
 **Não verificado**
 - [ ] Dados reais do TSE — o CDN respondeu **HTTP 403** a clientes não-browser
       neste ambiente (`cdn.tse.jus.br` e `dadosabertos.tse.jus.br`). Script
       pronto em `validation/14_dados_reais_tse.jl`; rode localmente.
-- [ ] Build do Documenter — não há `docs/` para compilar.
+- [x] Build do Documenter — compila localmente sem erro nem warning de docstring.
 
 **Não aplicável (não existe no pacote)**
 - Modelo de Klimek et al. / fingerprint 2D · quadratura de Gauss–Hermite ·
@@ -345,44 +355,14 @@ O patch leva a suíte a 105 asserções, adicionando: valores analíticos para
 
 ## 8. Versão sugerida e changelog
 
-O pacote **nunca foi publicado** (uma única tag, `590903f`, e nenhum release no
-General). Portanto **não há bump**: publique `0.1.0` já com as correções. Lançar
-0.1.0 com os defeitos e corrigir em 0.2.0 colocaria uma versão que acusa fraude
-em dados limpos no registro permanente.
+O pacote **nunca foi publicado** (uma única tag e nenhum release no General).
+Não há bump a fazer: `0.1.0` continua correto, agora já com as correções.
+Lançar 0.1.0 com os defeitos e corrigir em 0.2.0 teria colocado no registro
+permanente uma versão que acusa fraude em dados limpos.
 
-Se preferir marcar a linha do tempo interna, use **0.1.0 → 0.2.0 (minor)**: as
-mudanças são quebras de contrato (default de `null`, `forensics_report` deixa de
-retornar `penultimate::LastDigitResult`, `RozenasResult` ganha um campo), mas em
-0.x o minor já sinaliza incompatibilidade sob SemVer.
+`CHANGELOG.md` foi criado no repositório com o conteúdo abaixo.
 
-### CHANGELOG.md (rascunho)
-
-```markdown
-# Changelog
-
-## [0.1.0] — não lançado
-
-Primeira versão pública. Testes forenses de dígitos e de frações coarse.
-
-### Adicionado
-- `benford_test` (1BL/2BL) com null reamostrado (`BenfordConfig`)
-- `last_digit_test` (último e penúltimo dígito, `DigitTestConfig`)
-- `rozenas_test` — frações coarse com nula por bootstrap paramétrico
-- `forensics_report` — bateria integrada com saída colorida
-- `qvalues` (Benjamini–Hochberg) por fração em `RozenasResult`
-- `null_valid` em `LastDigitResult`
-- Suíte `validation/` com calibração sob H₀ e curvas de poder
-
-### Notas de calibração
-- O null da lei de Benford **não descreve contagens eleitorais limpas**
-  (erro tipo I até 0,72 com seções homogêneas). O default `null = :resampled`
-  calibra o p-valor contra a distribuição empírica de contagens;
-  `null = :benford` fica disponível como estatística descritiva.
-- O teste do **penúltimo dígito** é opt-in: seu null uniforme rejeita eleições
-  limpas em até 100 % dos casos quando as contagens cobrem menos de duas
-  décadas. `null_valid` sinaliza a condição.
-- Nenhum teste da bateria detecta *ballot stuffing* proporcional.
-```
+Veja `CHANGELOG.md`.
 
 ---
 
