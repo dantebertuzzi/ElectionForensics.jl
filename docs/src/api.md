@@ -28,8 +28,10 @@ FingerprintConfig
 
 ## Resultados
 
-Os três tipos de resultado implementam a interface de Tables.jl: uma linha por
-dígito (Benford, último dígito) ou por fração (Rozenas).
+Cinco dos seis tipos de resultado implementam a interface de Tables.jl: uma
+linha por dígito (Benford, último dígito), por fração (Rozenas), por teste
+(calibração) ou por casela ocupada do histograma (fingerprint).
+`BetaBinomialMixture` é o único que não é tabela.
 
 ```@docs
 BenfordResult
