@@ -38,9 +38,27 @@ eleitorais, e o pacote se afasta deles deliberadamente:
   empurra seções quase unânimes para o miolo: erro tipo I de 0,000 e poder de
   0,48 a ε = 2 %. Na escala logit, 0,030 e 0,70.
 
+### Validação em dados reais
+- 29 pleitos americanos de 2020 por precinct (OpenElections, transcritos de
+  boletins oficiais estaduais): o null clássico de Benford rejeita **8/29**
+  eleições legítimas (KS contra U(0,1): p = 0,0001); o null reamostrado
+  rejeita **0/29** (KS = 0,16).
+- Rússia 2012, 95 413 seções (Shpilkin; dataset de Kobak, Shpilkin &
+  Pshenichnikov 2016): o teste de frações coarse detecta a anomalia
+  (p = 0,043), com 4/5 e 3/4 no topo — os percentuais redondos que o artigo
+  documenta.
+- χ², p-valor e MAD conferidos contra `scipy` (Δ ≤ 2,8e-12) e `benford_py`
+  (Δ ≤ 1e-14) nos mesmos dados reais.
+
 ### Limitações conhecidas
 - Nenhum teste da bateria detecta *ballot stuffing* proporcional.
 - O teste do último dígito continua levemente anti-conservador (0,08 contra
   α = 0,05) quando a distribuição de percentuais é fortemente bimodal e muitas
   contagens ficam entre 10 e 30; um aviso é emitido.
-- A calibração foi verificada em simulação, não contra um pleito real.
+- O teste de frações coarse exige percentual *exatamente* igual a k/d, o que
+  requer `totals` divisível por d. Nos dados russos, 77 % das seções são
+  elegíveis para alguma fração com d ≤ 10 mas só 2,6 % acertam uma — o teste vê
+  apenas a fatia da manipulação que cai numa fração exata. `max_denom` maior
+  recupera parte do sinal (p = 0,042 → 0,017 com d ≤ 100).
+- Nenhum pleito brasileiro foi testado: o CDN do TSE bloqueia clientes
+  não-browser. `validation/14_dados_reais_tse.jl` está pronto para rodar.

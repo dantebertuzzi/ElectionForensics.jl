@@ -36,8 +36,10 @@ implementações independentes.
    anti-conservador — 0,082 contra α = 0,05 — quando a distribuição de
    percentuais é fortemente bimodal e muitas contagens ficam entre 10 e 30. Um
    aviso é emitido, mas o teste roda.
-2. **Nada foi validado contra um pleito real.** Toda a calibração é por
-   simulação; o CDN do TSE bloqueia clientes não-browser deste ambiente.
+2. **A validação em dados reais usa fontes estrangeiras.** O CDN do TSE
+   bloqueia clientes não-browser deste ambiente, então a calibração real foi
+   feita em 29 pleitos americanos (OpenElections) e o poder na Rússia 2012
+   (Shpilkin / Kobak et al.). Ver seção 5b. O TSE segue não verificado.
 3. **As correções são minhas, não revisadas por terceiro.** Foram verificadas
    por execução (178 testes, Aqua, JET, Documenter, Julia 1.10 e 1.12), mas
    passaram por um único par de olhos.
@@ -248,6 +250,104 @@ frações coarse são densas. Na escala logit o passo encolhe sozinho perto de 0
 |---|---|---|
 | 🟡 | M3 | **Parcial.** Aviso de dispersão e guarda de `min_value` adicionados, mas o teste do último dígito ainda roda e chega a 0,082 sob shares bimodais. Fechar exigiria um null reamostrado próprio ou um filtro por `sd`. |
 | — | — | Dados reais do TSE: `HTTP 403` deste ambiente. Script pronto em `validation/14_dados_reais_tse.jl`. |
+
+---
+
+## 5b. Validação em dados reais
+
+Duas fontes públicas de proveniência documentada, ambas reproduzíveis por
+`validation/fetch_dados_reais.py`:
+
+| Fonte | O que é | Testa |
+|---|---|---|
+| **OpenElections** | Resultados por precinct das gerais americanas de 2020, transcritos dos boletins oficiais das secretarias eleitorais estaduais | Calibração |
+| **dkobak/elections** | 95 413 seções (UIK) da presidencial russa de 2012, coletadas por Sergey Shpilkin — é o dataset de Kobak, Shpilkin & Pshenichnikov (2016), *Annals of Applied Statistics* 10(1):54–73 | Poder, contra verdade publicada |
+
+### Calibração: 29 pleitos americanos
+
+29 dos 35 estados baixados passaram no crivo de qualidade da extração; os
+outros 6 foram excluídos e o motivo está registrado em `qualidade.csv`.
+
+| Teste | rej @ α=0,05 | rej @ α=0,10 | KS vs U(0,1) |
+|---|---|---|---|
+| 2BL, **null clássico** (lei de Benford) | **8/29 — 28 %** | 12/29 — 41 % | **0,0001** |
+| 2BL, **null reamostrado** (novo default) | **0/29 — 0 %** | 2/29 — 7 % | 0,160 |
+| Último dígito | 3/29 — 10 % | 5/29 — 17 % | 0,273 |
+| Frações coarse (Rozenas) | 3/29 — 10 % | 3/29 — 10 % | 0,420 |
+
+**Este é o teste mais forte do relatório, e confirma o achado C2 em dados
+reais.** O null da lei de Benford rejeita 28 % de eleições americanas
+legítimas — NY com p = 3,7 × 10⁻¹⁹, MA com 7,8 × 10⁻¹¹, IL com 2,0 × 10⁻⁹,
+OH com 1,5 × 10⁻⁸ — e a distribuição dos p-valores é incompatível com a
+uniformidade. O null reamostrado não rejeita nenhum, com KS não significativo.
+A simulação previa 0,71 → 0,054; os dados reais entregam 0,28 → 0,00.
+
+Duas ressalvas honestas sobre a mesma tabela:
+
+- O teste do último dígito dá 3/29 contra 1,5 esperado (ID, LA, MO). Não é
+  significativo (KS = 0,273), mas é consistente com o resíduo do achado M3.
+- As frações coarse dão 3/29 (AK, SD, LA). Eu havia levantado, com uma amostra
+  de 8 pleitos, a hipótese de **sobredispersão da nula em dados reais**.
+  Com 29 pleitos ela **não se sustenta**: KS = 0,420. Era ruído amostral.
+
+### Poder: Rússia 2012
+
+| Teste | Resultado |
+|---|---|
+| Benford 2BL clássico | p = 4,8 × 10⁻¹¹ |
+| Benford 2BL reamostrado | p = 0,012 |
+| Último dígito | p = 0,059 |
+| **Frações coarse** | **p = 0,043** · T = 2122 · E[T\|H₀] = 2051 · z = 1,7 |
+
+As duas frações com maior excesso são **4/5 (z = 2,9)** e **3/4 (z = 2,6)** —
+80 % e 75 %, exatamente os percentuais redondos que Kobak et al. documentam.
+O pacote detecta a anomalia canônica da literatura, mas fracamente.
+
+**Por que fracamente — uma limitação inerente que os dados reais expuseram.**
+O primitivo exige que o percentual seja *exatamente* k/d, o que requer
+`totals` divisível por d. Nos dados russos:
+
+| d | seções com d \| N | % |
+|---|---|---|
+| 2 | 47 807 | 50,1 |
+| 3 | 31 843 | 33,4 |
+| 5 | 19 705 | 20,7 |
+| 10 | 10 053 | 10,5 |
+
+77,2 % das seções são elegíveis para *alguma* fração com d ≤ 10, mas só 2,6 %
+acertam uma. Kobak et al. comparam a densidade em percentuais inteiros contra a
+vizinhança local e não precisam de divisibilidade — por isso enxergam um efeito
+muito maior nos mesmos dados. Aumentar `max_denom` recupera parte do sinal
+(p = 0,042 com d ≤ 10 → 0,017 com d ≤ 100), o que sugere revisar o default.
+
+### Confirmação de C1 em dados reais
+
+O teste do penúltimo dígito devolve **p = 3,4 × 10⁻⁶³** na Rússia 2012 — e
+`null_valid = false`, porque as contagens cobrem 1,31 décadas. O **mesmo** teste
+devolve p ≈ 10⁻⁸ em dados simulados *limpos*. O número não distingue fraude de
+artefato do null; agora é opt-in e vem marcado.
+
+### Referência cruzada em dados reais
+
+16 comparações de χ², p-valor e MAD contra `scipy` sobre os mesmos datasets
+reais: discrepância relativa máxima **2,8 × 10⁻¹²**. MAD contra `benford_py`
+(biblioteca Python independente): **1 × 10⁻¹⁴**.
+
+### Três erros meus na preparação dos dados
+
+Registrados porque são o tipo de coisa que produz "fraude" inexistente:
+
+1. Uma regex removeu **Don Blankenship**, candidato real de 2020, por o
+   sobrenome conter "blank".
+2. Linhas de subtotal por condado (`"ANDROSCOGGIN Total"`) entraram como
+   precinct, duplicando seções.
+3. A coluna `absentee_votes` de Rhode Island foi ignorada, encolhendo o
+   denominador.
+
+Os três alteravam resultados. Por isso `fetch_dados_reais.py` agora verifica,
+por estado, a identidade `linha-resumo = Σcandidatos + brancos/nulos` e a
+coerência do top-2, e exclui quem não passa.
+
 
 ## 6. Eixo D — a suíte de testes
 

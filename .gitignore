@@ -11,3 +11,5 @@ lcov.info
 # dados intermediários da referência cruzada (regeneráveis por
 # validation/10a_export_para_scipy.jl)
 /validation/xref/
+# dados eleitorais baixados por validation/fetch_dados_reais.py
+/validation/dados_reais/

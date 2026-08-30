@@ -24,5 +24,8 @@ julia --project=. -t auto validation/01_calibracao_benford.jl
 | `12_guarda_aplicabilidade.jl` | amplitude prediz a validade da 2BL? | não de forma confiável |
 | `13_benford_null_reamostrado.jl` | null reamostrado corrige a 2BL? | **sim**: 0,72 → 0,046 |
 | `14_dados_reais_tse.jl` | dados reais do TSE | **não executado** (CDN do TSE: HTTP 403) |
+| `fetch_dados_reais.py` | baixa EUA 2020 (OpenElections) e Rússia 2012 (Shpilkin) | — |
+| `16_dados_reais.jl` | **dados reais**: calibração em 29 pleitos americanos, poder na Rússia 2012 | 2BL clássica rejeita 8/29 eleições legítimas; reamostrada 0/29. Rússia detectada (p=0,043) |
+| `17_heterogeneidade_secoes.jl` | a nula do Rozenas aguenta seções de N=2 a N=5000? | sim: erro tipo I 0,011–0,055 com totais reais |
 |_(o patch da primeira rodada foi aplicado; ver `git log`)_|||
 | `15_rozenas_escala.jl` | qual escala de jitter calibra a nula do Rozenas? | **logit**: erro tipo I 0,000 → 0,030 e poder 0,48 → 0,67 sob shares em U |
