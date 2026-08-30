@@ -433,6 +433,81 @@ Idaho e Missouri passam, e são exatamente o ruído de teste múltiplo esperado
 qualquer p-valor.
 
 
+---
+
+## 5d. Comparação com o estado da arte
+
+### Em Julia não há concorrente
+
+Varredura do General Registry: **14 249 pacotes, nenhum de forense eleitoral ou
+de lei de Benford**. Os únicos nomes que casam com termos do domínio são
+`SynchronicBallot` (consenso distribuído) e `BRElections` (acesso a dados do
+TSE, do mesmo autor). `ElectionForensics.jl` seria o primeiro.
+
+### As bibliotecas de Benford têm a mesma ressalva — e pior
+
+Rodei cada biblioteca **com seus próprios defaults** sobre os mesmos 29 pleitos
+americanos legítimos (`validation/20_concorrentes.py`):
+
+| Biblioteca | Acusa | Taxa | KS vs U(0,1) |
+|---|---|---|---|
+| `benford.analysis` (CRAN) — MAD 2 díg. | **28/29** | **97 %** | sem p-valor |
+| `BenfordTests::chisq.benftest` (1BL) | 23/29 | 79 % | 3 × 10⁻¹⁸ |
+| `benfordslaw` (PyPI, default) | 23/29 | 79 % | 3 × 10⁻¹⁸ |
+| `benford_py` (PyPI) — MAD 1BL | 23/29 | 79 % | sem p-valor |
+| `BenfordTests::meandigit.benftest` | 21/29 | 72 % | 4 × 10⁻¹⁴ |
+| `BenfordTests::ks.benftest` | 20/29 | 69 % | 1 × 10⁻¹⁶ |
+| `BenfordTests::chisq.benftest` (2 díg.) | 19/29 | 66 % | 1 × 10⁻¹² |
+| **ElectionForensics.jl** — null clássico | 8/29 | 28 % | 1 × 10⁻⁴ |
+| **ElectionForensics.jl** — null reamostrado | **0/29** | **0 %** | 0,16 |
+
+`benford_py` e `benfordslaw` foram **executados**. As estatísticas de
+`BenfordTests` e `benford.analysis` foram **reimplementadas a partir do fonte R**
+(não há R neste ambiente) — os limiares de MAD conferem com
+`internal.functions-new-code-2.R` (`0.0012, 0.0018, 0.0022`).
+
+Duas observações de justiça:
+
+- Essas são ferramentas **de propósito geral** para auditoria contábil, não de
+  forense eleitoral. Aplicá-las a contagens de votos é uso indevido — mas é um
+  uso que elas convidam: nenhuma verifica a condição de aplicabilidade.
+  `benfordslaw` é a única que ao menos **documenta** a premissa ("the numbers
+  should cover several orders of magnitude", docstring), sem checá-la.
+- O pacote já saía na frente por um acerto do autor: o default `digit = 2`
+  (2BL, seguindo Mebane 2008) rende 28 % contra os 79 % da 1BL. A escolha
+  original estava certa; só não era suficiente.
+
+### `spikes` (Rozenas) é melhor onde importa — e tem outras ressalvas
+
+`spikes` v1.1 (CRAN, 2016) é a implementação do **próprio autor do método**.
+Lendo o fonte:
+
+| | `spikes` | `ElectionForensics.jl` |
+|---|---|---|
+| Densidade latente | Mistura de Beta-Binomiais ajustada por **EM** | Kernel gaussiano sobre os shares observados |
+| Reamostragem | Posterior `Beta(y+α, n−y+β)` — **deconvolui o ruído binomial** | Jitter em escala logit |
+| Fronteiras 0/1 | Naturais na Beta | Precisou de tratamento explícito (achado M5) |
+| Saída | % estimada de seções fraudulentas + IC bootstrap | p-valor Monte Carlo + q-valores BH |
+| Controle de erro tipo I | **Nenhum** (não é teste) | Medido por `calibration_check` |
+| Escopo | Só frações coarse | + Benford, último/penúltimo dígito |
+| Manutenção | Última versão 2016 | — |
+| Efeitos colaterais | `plot()` dentro do ajuste, `dev.off()` incondicional, laços `while` sem teto | — |
+
+**O modelo de nula de `spikes` é superior ao deste pacote** — é exatamente a
+deconvolução que meu experimento do M5 tateava. Recomendo, como trabalho
+futuro, substituir o jitter por uma mistura Beta-Binomial ajustada aos dados.
+
+`eforensics` (implementação do modelo de Mebane & Klašnja) existe no GitHub mas
+nunca foi lançado: o `DESCRIPTION` ainda traz o texto-modelo do roxygen
+("What the Package Does (one line, title case)"), versão 0.0.0.9000, fora do CRAN.
+
+### O diferencial
+
+Nenhuma das bibliotecas examinadas — nem as de Benford, nem `spikes` — mede a
+própria taxa de erro tipo I nos dados do usuário. `calibration_check` não é um
+teste melhor; é o único que avisa quando o próprio p-valor não é confiável.
+
+
 ## 6. Eixo D — a suíte de testes
 
 A suíte original (76 asserções) tem boa cobertura de **caminhos** e de
