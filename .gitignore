@@ -1,0 +1,15 @@
+# Manifest.toml de pacote não deve ser versionado: fixa versões resolvidas
+# para UMA versão de Julia e quebra `Pkg.instantiate()` nas demais.
+/Manifest.toml
+/docs/Manifest.toml
+/docs/build/
+/test/Manifest.toml
+*.cov
+*.jl.mem
+lcov.info
+/resultados_forensics/
+# dados intermediários da referência cruzada (regeneráveis por
+# validation/10a_export_para_scipy.jl)
+/validation/xref/
+# dados eleitorais baixados por validation/fetch_dados_reais.py
+/validation/dados_reais/
