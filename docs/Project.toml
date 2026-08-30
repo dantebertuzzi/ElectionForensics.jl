@@ -2,6 +2,8 @@
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 ElectionForensics = "a47b8dd7-4b03-41e4-947f-1e7fc4bd8fdd"
+Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
 Documenter = "1"
+Tables = "1"
