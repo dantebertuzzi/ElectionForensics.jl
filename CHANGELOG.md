@@ -21,6 +21,13 @@ calibração de cada null verificada por simulação (`validation/`).
   `:anticonservador`. `forensics_report` o executa por default e imprime o
   resultado antes de qualquer p-valor.
 - `boundary = :logit | :reflect` em `rozenas_test`
+- `null = :kernel | :betabinomial` em `rozenas_test`, com
+  `fit_betabinomial_mixture` — implementação do modelo do pacote `spikes` de
+  Rozenas: mistura de Beta-Binomiais por EM e reamostragem da posterior. Duas
+  divergências deliberadas em relação ao original: seleção de componentes por
+  BIC em vez da correlação entre densidades de L consecutivos, e teto de
+  iterações em todos os laços. Toda mistura carrega o diagnóstico de aderência
+  `misfit`
 - Interface Tables.jl nos três tipos de resultado
 - Coerção explícita de entrada: `Float64` com valor inteiro é aceito; valores
   fracionários e `NaN` são erro; `missing` exige `skipmissing = true`
@@ -56,6 +63,11 @@ eleitorais, e o pacote se afasta deles deliberadamente:
   (Δ ≤ 1e-14) nos mesmos dados reais.
 
 ### Limitações conhecidas
+- A nula `:betabinomial` é paramétrica: um desajuste numa faixa fina da
+  distribuição de percentuais fabrica excesso nas frações que caem ali. Nos
+  dados russos de 2012 ela subestima a cauda esquerda em 3,8× e produz dez
+  frações com q < 0,05 entre 1/7 e 1/4. Por isso `:kernel` é o default e o
+  campo `misfit` avisa acima de 2.
 - Nenhum teste da bateria detecta *ballot stuffing* proporcional.
 - O teste do último dígito é anti-conservador quando muitas contagens ficam
   entre 10 e 50 — chega a 0,37 com seções de 10 a 120 eleitores. Não há

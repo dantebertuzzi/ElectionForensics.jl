@@ -32,3 +32,4 @@ julia --project=. -t auto validation/01_calibracao_benford.jl
 | `18_criterio_ultimo_digito.jl` | existe diagnóstico escalar que prediga a falha do null uniforme? | **não**: correlações de +0,25 a −0,55 com contraexemplos nos dois sentidos |
 | `19_valida_calibration_check.jl` | `calibration_check` acerta a taxa que prevê? | sim: 0,372 medido vs 0,364 previsto no pior regime |
 | `20_concorrentes.py` | as bibliotecas existentes acusam eleições legítimas? | sim: 66–97 % dos 29 pleitos, contra 0 % do null reamostrado |
+| `21_nula_betabinomial.jl` | a nula Beta-Binomial do `spikes` é melhor? | em simulação, equivalente; em dados reais, desajusta a cauda e inventa 10 frações |

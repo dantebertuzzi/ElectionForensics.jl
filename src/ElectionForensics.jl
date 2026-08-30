@@ -28,6 +28,7 @@ using Distributions
 using Statistics
 using Random
 using Printf
+using SpecialFunctions
 using Tables
 
 export first_digit, second_digit, last_digit, penultimate_digit,
@@ -35,11 +36,13 @@ export first_digit, second_digit, last_digit, penultimate_digit,
        forensics_report,
        BenfordResult, LastDigitResult, RozenasResult,
        BenfordConfig, DigitTestConfig, CalibrationConfig,
-       calibration_check, CalibrationResult
+       calibration_check, CalibrationResult,
+       fit_betabinomial_mixture, BetaBinomialMixture
 
 include("utils.jl")
 include("benford.jl")
 include("lastdigit.jl")
+include("betabinomial.jl")
 include("rozenas.jl")
 include("calibration.jl")
 include("report.jl")

@@ -60,8 +60,16 @@ empurra a massa das seções quase unânimes para o miolo, onde as frações coa
 são densas. Com jitter em escala de probabilidade (`:reflect`), sob shares em U
 o erro tipo I caía a 0,000 e o poder a ε = 2 % era 0,48 contra 0,67.
 
-Esta é uma **aproximação frequentista** do método do artigo, que usa um
-estimador bayesiano de densidade kernel reamostrada. Os excessos por fração são
+Duas nulas estão disponíveis. `null = :kernel` (default) perturba os
+percentuais observados. `null = :betabinomial` implementa o modelo do pacote
+`spikes`, do próprio Rozenas: mistura de Beta-Binomiais ajustada por EM e
+reamostragem da posterior `Beta(y+α, n−y+β)`, que deconvolui o ruído binomial.
+
+Em simulação as duas são equivalentes. Em dados reais a paramétrica pode
+desajustar numa faixa fina de percentuais e inventar excesso ali — nos dados
+russos de 2012 ela subestima a cauda esquerda em 3,8× e produz dez frações
+falsamente significativas. Toda mistura ajustada carrega o diagnóstico
+`misfit`, e o pacote avisa quando passa de 2. Os excessos por fração são
 exploratórios: use os `qvalues` (Benjamini–Hochberg), não os z brutos.
 
 **Benford.** χ² de aderência + MAD com limiares de conformidade de

@@ -4,6 +4,7 @@ using Aqua
 using Tables
 using Random
 using Distributions
+using SpecialFunctions
 using Statistics
 
 @testset "ElectionForensics.jl" begin
@@ -542,6 +543,107 @@ using Statistics
         forensics_report(votes, totals; B = 99, calibrate = false, io = buf2,
                          rng = MersenneTwister(41))
         @test !occursin("Auto-diagnóstico", String(take!(buf2)))
+    end
+
+    @testset "_bb_logkernel — confere com a definição" begin
+        # O núcleo omite log C(n,y); a diferença para o logpdf completo tem de
+        # ser exatamente esse termo, para qualquer (α, β).
+        for (y, n) in ((3, 10), (300, 500), (1, 2), (0, 7), (7, 7))
+            for (a, b) in ((1.0, 1.0), (8.0, 6.0), (0.3, 0.4), (120.0, 35.0))
+                k = ElectionForensics._bb_logkernel(y, n, a, b)
+                completo = logpdf(BetaBinomial(n, a, b), y)
+                @test completo - k ≈ first(logabsbinomial(n, y)) atol = 1e-9
+            end
+        end
+        # α = β = 1 ⇒ a Beta-Binomial é uniforme em 0:n. Quem é constante é o
+        # logpdf COMPLETO; o núcleo omite log C(n,y) e portanto não é.
+        n = 12
+        completos = [ElectionForensics._bb_logkernel(y, n, 1.0, 1.0) +
+                     first(logabsbinomial(n, y)) for y in 0:n]
+        @test all(≈(-log(n + 1)), completos)
+        nucleos = [ElectionForensics._bb_logkernel(y, n, 1.0, 1.0) for y in 0:n]
+        @test !all(≈(nucleos[1]), nucleos)
+        @test nucleos ≈ reverse(nucleos)          # simétrico em α = β
+    end
+
+    @testset "_nelder_mead — valores analíticos" begin
+        nm = ElectionForensics._nelder_mead
+        # Rosenbrock: mínimo em (1,1)
+        f(p) = (1 - p[1])^2 + 100(p[2] - p[1]^2)^2
+        best, fv = nm(f, (-1.0, 1.0), -5.0, 5.0; maxiter = 3000, tol = 1e-14)
+        @test best[1] ≈ 1.0 atol = 1e-2
+        @test best[2] ≈ 1.0 atol = 2e-2
+        @test fv < 1e-4
+        # respeita a caixa
+        g(p) = (p[1] - 10.0)^2 + (p[2] + 10.0)^2
+        best2, _ = nm(g, (0.0, 0.0), -1.0, 1.0; maxiter = 500)
+        @test -1.0 ≤ best2[1] ≤ 1.0
+        @test -1.0 ≤ best2[2] ≤ 1.0
+        @test best2[1] ≈ 1.0 atol = 1e-3     # empurrado contra a fronteira
+    end
+
+    @testset "fit_betabinomial_mixture — recupera mistura conhecida" begin
+        r = MersenneTwister(101)
+        m = 3000
+        n = rand(r, 200:900, m)
+        comp = rand(r, 1:2, m)
+        # componente 1: média 0.400 (α=20,β=30); componente 2: média 0.750 (α=45,β=15)
+        p = [comp[i] == 1 ? rand(r, Beta(20, 30)) : rand(r, Beta(45, 15)) for i in 1:m]
+        y = [rand(r, Binomial(n[i], p[i])) for i in 1:m]
+
+        mix = fit_betabinomial_mixture(y, n; rng = MersenneTwister(102))
+        @test mix.components == 2
+        medias = sort([mix.alpha[k] / (mix.alpha[k] + mix.beta[k]) for k in 1:2])
+        @test medias[1] ≈ 0.400 atol = 0.02
+        @test medias[2] ≈ 0.750 atol = 0.02
+        @test sum(mix.weights) ≈ 1.0
+        @test all(mix.weights .> 0)
+        @test all(mix.alpha .> 0) && all(mix.beta .> 0)
+        @test isfinite(mix.loglik) && isfinite(mix.bic)
+        @test 1 ≤ mix.iterations ≤ 100
+        @test mix.misfit ≥ 1.0                      # razão é sempre ≥ 1 por construção
+
+        # BIC penaliza componentes a mais: com uma Beta única, escolhe L = 1
+        r2 = MersenneTwister(103)
+        n2 = rand(r2, 200:900, m)
+        p2 = rand(r2, Beta(8, 6), m)
+        y2 = [rand(r2, Binomial(n2[i], p2[i])) for i in 1:m]
+        mix2 = fit_betabinomial_mixture(y2, n2; rng = MersenneTwister(104))
+        @test mix2.components == 1
+        @test mix2.alpha[1] / (mix2.alpha[1] + mix2.beta[1]) ≈ 8/14 atol = 0.02
+
+        @test_throws ArgumentError fit_betabinomial_mixture(y, n; max_components = 0)
+        @test_throws ArgumentError fit_betabinomial_mixture(y, n; log_bounds = (5.0, 1.0))
+    end
+
+    @testset "rozenas_test — nula Beta-Binomial" begin
+        rng = seed("rozenas_test — nula Beta-Binomial")
+        m = 1200
+        totals = rand(rng, 150:900, m)
+        p = rand(rng, Beta(8, 6), m)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:m]
+
+        rk = rozenas_test(votes, totals; B = 199, null = :kernel,
+                          rng = MersenneTwister(51))
+        rb = rozenas_test(votes, totals; B = 199, null = :betabinomial,
+                          rng = MersenneTwister(51))
+        @test rk.null === :kernel
+        @test rb.null === :betabinomial
+        @test rk.mixture === nothing
+        @test rb.mixture isa BetaBinomialMixture
+        @test rb.total_observed == rk.total_observed     # a estatística não muda
+        @test 0 < rb.pvalue ≤ 1
+        @test length(rb.qvalues) == length(rb.fractions)
+
+        # reprodutível
+        rb2 = rozenas_test(votes, totals; B = 199, null = :betabinomial,
+                           rng = MersenneTwister(51))
+        @test rb.pvalue == rb2.pvalue
+
+        @test_throws ArgumentError rozenas_test(votes, totals; null = :bogus)
+
+        io = IOBuffer(); show(io, MIME"text/plain"(), rb)
+        @test occursin("Beta-Binomial", String(take!(io)))
     end
 
     @testset "Aqua" begin

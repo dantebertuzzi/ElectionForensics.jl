@@ -97,6 +97,44 @@ regime tem erro tipo I **medido** de 0,372 e **previsto** de 0,364.
 [`forensics_report`](@ref) roda essa checagem por default (`calibrate = true`)
 para os testes de dígito e imprime o resultado **antes** de qualquer p-valor.
 
+## Duas nulas para o teste de Rozenas
+
+`null = :kernel` (default) perturba os percentuais observados com um kernel
+gaussiano em escala logit. `null = :betabinomial` implementa o modelo do pacote
+`spikes`, do próprio Rozenas: ajusta por EM uma mistura de Beta-Binomiais à
+distribuição **latente** de percentuais e reamostra da posterior de cada seção,
+
+```math
+\tilde p_i \sim \mathrm{Beta}(y_i + \alpha_k,\; n_i - y_i + \beta_k), \qquad
+y_i^* \sim \mathrm{Binomial}(n_i, \tilde p_i)
+```
+
+com o componente `k` sorteado proporcionalmente à responsabilidade. A posterior
+deconvolui o ruído binomial e vive em [0,1], então dispensa tratamento de
+fronteira.
+
+**Em simulação as duas são equivalentes** — mesmo quando o processo gerador
+é, por construção, uma mistura de Betas:
+
+| Shares | erro tipo I `:kernel` | `:betabinomial` | poder ε=2 % `:kernel` | `:betabinomial` |
+|---|---|---|---|---|
+| Beta(8,6) | 0,030 | 0,033 | 0,420 | 0,443 |
+| Beta(0.5,0.5) | 0,038 | 0,033 | 0,515 | 0,530 |
+| bimodal 2 comp. | 0,033 | 0,045 | — | — |
+
+**Em dados reais a versão paramétrica pode falhar.** Nos 95 413 UIK russos de
+2012 a mistura ajusta o corpo da distribuição muito bem (razão observado/predito
+entre 0,97 e 1,05 para percentuais acima de 0,3) mas subestima a cauda esquerda
+em **3,8×** — e a nula passa a "encontrar" excesso justamente nas frações que
+caem ali: 1/7, 1/6, 1/5 e 1/4 aparecem com q < 0,05 sem que haja nada lá.
+A nula por kernel, sendo não-paramétrica, acompanha a distribuição observada
+inclusive nas caudas e não tem esse modo de falha.
+
+Por isso `:kernel` continua o default, e toda mistura ajustada carrega o
+diagnóstico `misfit`: a maior razão observado/predito entre as faixas de
+percentual com massa não desprezível. Acima de 2 o pacote avisa. Nos dados
+russos ele marca 2,57 na faixa [0,20, 0,25) — exatamente onde estão 1/5 e 1/4.
+
 ## Multiplicidade
 
 `RozenasResult` reporta excessos por fração. Sob H₀, o maior z entre as 31

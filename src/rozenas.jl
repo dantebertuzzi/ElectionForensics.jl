@@ -83,6 +83,8 @@ struct RozenasResult
     B::Int
     h::Float64
     boundary::Symbol
+    null::Symbol
+    mixture::Union{Nothing,BetaBinomialMixture}
 end
 
 """
@@ -123,9 +125,13 @@ function rozenas_test(votes::AbstractVector{<:Integer},
                       B::Int = 999,
                       h::Union{Nothing,Real} = nothing,
                       boundary::Symbol = :logit,
+                      null::Symbol = :kernel,
+                      max_components::Int = 5,
                       rng::AbstractRNG = Random.default_rng())
     boundary in (:logit, :reflect) ||
         throw(ArgumentError("boundary deve ser :logit ou :reflect"))
+    null in (:kernel, :betabinomial) ||
+        throw(ArgumentError("null deve ser :kernel ou :betabinomial"))
     m = length(votes)
     m == length(totals) ||
         throw(DimensionMismatch("votes e totals devem ter o mesmo comprimento"))
@@ -171,14 +177,42 @@ function rozenas_test(votes::AbstractVector{<:Integer},
     end
     hval > 0 || throw(ArgumentError("h deve ser > 0"))
 
+    # Ajuste da mistura Beta-Binomial, quando pedida. Feito uma única vez: as
+    # B réplicas reamostram da mesma posterior.
+    mixture = nothing
+    Wresp = zeros(Float64, 0, 0)
+    yv = Int[]; nv = Int[]
+    if null === :betabinomial
+        yv = [Int(votes[i]) for i in 1:m]
+        nv = [Int(totals[i]) for i in 1:m]
+        mixture = fit_betabinomial_mixture(yv, nv;
+                                           max_components = max_components, rng = rng)
+        if mixture.misfit > 2.0
+            @warn "a mistura Beta-Binomial não descreve bem a faixa de \
+                percentuais [$(round(mixture.misfit_range[1], digits=2)), \
+                $(round(mixture.misfit_range[2], digits=2))): observado é \
+                $(round(mixture.misfit, digits=1))× o predito. A nula vai \
+                inventar excesso nas frações dessa faixa — prefira null = :kernel."
+        end
+        Wresp = Matrix{Float64}(undef, m, mixture.components)
+        _bb_estep!(Wresp, yv, nv, mixture.weights, mixture.alpha, mixture.beta)
+    end
+
     null_counts = zeros(Int, B, J)
     null_totals = zeros(Int, B)
+    buf = Vector{Int}(undef, m)
     @inbounds for b in 1:B
+        if null === :betabinomial
+            _resample_betabinomial!(buf, yv, nv, mixture, Wresp, rng)
+        else
+            for i in 1:m
+                p = _jitter(boundary, i, shares, jshares, hval, rng)
+                buf[i] = rand(rng, Binomial(Int(totals[i]), p))
+            end
+        end
         tb = 0
         for i in 1:m
-            p = _jitter(boundary, i, shares, jshares, hval, rng)
-            y = rand(rng, Binomial(Int(totals[i]), p))
-            j = get(frac_index, _reduced(y, Int(totals[i])), 0)
+            j = get(frac_index, _reduced(buf[i], Int(totals[i])), 0)
             if j > 0
                 null_counts[b, j] += 1
                 tb += 1
@@ -202,13 +236,18 @@ function rozenas_test(votes::AbstractVector{<:Integer},
 
     return RozenasResult(fractions, observed, null_mean, null_sd,
                          T_obs, null_totals, pvalue, zscore, qvalues, m, B,
-                         hval, boundary)
+                         hval, boundary, null, mixture)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", r::RozenasResult)
     printstyled(io, "Teste de frações coarse — Rozenas (2017)\n"; bold = true)
-    @printf(io, "seções: %d   réplicas: %d   h (jitter, escala %s): %.4f\n",
-            r.m, r.B, r.boundary === :logit ? "logit" : "prob.", r.h)
+    if r.null === :betabinomial
+        @printf(io, "seções: %d   réplicas: %d   nula: mistura Beta-Binomial (%d componentes)\n",
+                r.m, r.B, r.mixture.components)
+    else
+        @printf(io, "seções: %d   réplicas: %d   nula: kernel (escala %s, h = %.4f)\n",
+                r.m, r.B, r.boundary === :logit ? "logit" : "prob.", r.h)
+    end
     @printf(io, "T_obs = %d   E[T|H₀] = %.1f   z = %.2f   p = %s\n",
             r.total_observed, mean(r.null_totals), r.zscore, _fmt_p(r.pvalue))
 
