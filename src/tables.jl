@@ -74,3 +74,16 @@ end
 Tables.schema(r::CalibrationResult) = Tables.Schema(
     (:test, :alpha, :rejection_rate, :se, :ratio, :verdict),
     (Symbol, Float64, Float64, Float64, Float64, Symbol))
+
+Tables.istable(::Type{<:FingerprintResult}) = true
+Tables.rowaccess(::Type{<:FingerprintResult}) = true
+function Tables.rows(r::FingerprintResult)
+    nb = size(r.counts, 1)
+    largura = step(r.edges)
+    return [(turnout = r.edges[bx] + largura / 2,
+             vote_rate = r.edges[by] + largura / 2,
+             count = r.counts[bx, by])
+            for bx in 1:nb, by in 1:nb if r.counts[bx, by] > 0]
+end
+Tables.schema(::FingerprintResult) = Tables.Schema(
+    (:turnout, :vote_rate, :count), (Float64, Float64, Int))

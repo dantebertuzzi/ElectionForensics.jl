@@ -81,6 +81,24 @@ reamostrado — jitter gaussiano em `log10(contagem)` — devolve a taxa a 0,05
 e responde à pergunta útil: "o dígito é anômalo *dado* o formato empírico das
 contagens?". Use `null = :benford` apenas como estatística descritiva.
 
+**Fingerprint (Klimek et al. 2012).** Histograma 2-D de seções por
+comparecimento (eixo x) e percentual de votos no vencedor (eixo y). Um
+aglomerado único e compacto é o padrão limpo; um borrão para o canto superior
+direito indica manipulação incremental, e um segundo aglomerado em
+(100 %, 100 %) indica manipulação extrema. Traz também a assimetria e a curtose
+da taxa logarítmica de voto `ν = log((N−W)/W)`, que em eleições limpas ficam
+perto de (0, 3).
+
+Exige uma entrada a mais que os demais testes — o **eleitorado** por seção:
+
+```julia
+election_fingerprint(winner_votes, ballots_cast, electorate)
+```
+
+É um diagnóstico visual, não um teste: não produz p-valor. O modelo
+paramétrico de fraude `(fᵢ, f_e)` do artigo não está implementado — sua
+especificação está no Supporting Information, fora do preprint.
+
 **Último dígito.** χ² contra uniforme em 0:9, excluindo contagens
 pequenas (`min_value = 10`). Reporta também `freq{0,5}` (esperado ≈ 0.20;
 números fabricados superusam 0 e 5). Calibrado para seções com ≥ 60 eleitores.

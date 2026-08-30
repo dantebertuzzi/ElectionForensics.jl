@@ -31,6 +31,11 @@ calibração de cada null verificada por simulação (`validation/`).
 - Interface Tables.jl nos três tipos de resultado
 - Coerção explícita de entrada: `Float64` com valor inteiro é aceito; valores
   fracionários e `NaN` são erro; `missing` exige `skipmissing = true`
+- `election_fingerprint` e `log_vote_rate` — fingerprint de Klimek et al.
+  (2012): histograma 2-D comparecimento × votos no vencedor, e assimetria e
+  curtose da taxa logarítmica de voto. Diagnóstico visual, sem p-valor. O
+  modelo paramétrico de fraude do artigo não está implementado (especificação
+  no Supporting Information, fora do preprint)
 - Suíte `validation/` com calibração sob H₀, curvas de poder e referência
   cruzada com `scipy`
 
@@ -63,6 +68,9 @@ eleitorais, e o pacote se afasta deles deliberadamente:
   (Δ ≤ 1e-14) nos mesmos dados reais.
 
 ### Limitações conhecidas
+- O fingerprint exige o **eleitorado** por seção, que a maioria dos
+  repositórios de resultados não publica — só 6 dos 40 estados do
+  OpenElections o fazem.
 - A nula `:betabinomial` é paramétrica: um desajuste numa faixa fina da
   distribuição de percentuais fabrica excesso nas frações que caem ali. Nos
   dados russos de 2012 ela subestima a cauda esquerda em 3,8× e produz dez

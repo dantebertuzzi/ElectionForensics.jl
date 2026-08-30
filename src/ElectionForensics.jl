@@ -37,7 +37,9 @@ export first_digit, second_digit, last_digit, penultimate_digit,
        BenfordResult, LastDigitResult, RozenasResult,
        BenfordConfig, DigitTestConfig, CalibrationConfig,
        calibration_check, CalibrationResult,
-       fit_betabinomial_mixture, BetaBinomialMixture
+       fit_betabinomial_mixture, BetaBinomialMixture,
+       election_fingerprint, log_vote_rate,
+       FingerprintConfig, FingerprintResult
 
 include("utils.jl")
 include("benford.jl")
@@ -45,6 +47,7 @@ include("lastdigit.jl")
 include("betabinomial.jl")
 include("rozenas.jl")
 include("calibration.jl")
+include("fingerprint.jl")
 include("report.jl")
 include("tables.jl")
 

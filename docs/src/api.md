@@ -13,6 +13,8 @@ rozenas_test
 forensics_report
 calibration_check
 fit_betabinomial_mixture
+election_fingerprint
+log_vote_rate
 ```
 
 ## Configuração
@@ -21,6 +23,7 @@ fit_betabinomial_mixture
 BenfordConfig
 DigitTestConfig
 CalibrationConfig
+FingerprintConfig
 ```
 
 ## Resultados
@@ -34,6 +37,7 @@ LastDigitResult
 RozenasResult
 CalibrationResult
 BetaBinomialMixture
+FingerprintResult
 ```
 
 ## Utilidades
