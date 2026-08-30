@@ -81,6 +81,21 @@ isso é opt-in: com seções de 150–900 eleitores seu null uniforme rejeita
 eleições limpas em 50 % dos casos (100 % com seções de 100–200). O campo
 `null_valid` sinaliza quando a condição não é atendida.
 
+## Meça a calibração antes de concluir
+
+A validade do null de cada teste depende do formato da sua distribuição de
+contagens, e nenhuma estatística simples prediz quando ele falha. Em vez de
+prometer, o pacote mede:
+
+```julia
+calibration_check(votes, totals)   # simula eleições limpas com os SEUS totais
+```
+
+Ele reporta a taxa de erro tipo I que cada teste de fato entrega nesses dados.
+`anticonservador` significa que o teste rejeita eleições limpas acima de α —
+não conclua fraude a partir dele. `forensics_report` roda essa checagem por
+default e a imprime antes dos p-valores.
+
 ## Advertências
 
 Nenhum teste isolado prova fraude. Falsos positivos surgem de seções

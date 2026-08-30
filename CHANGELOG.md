@@ -15,6 +15,11 @@ calibração de cada null verificada por simulação (`validation/`).
 - `forensics_report` — bateria integrada com saída colorida
 - `qvalues` (Benjamini–Hochberg) por fração em `RozenasResult`
 - `null_valid` em `LastDigitResult`
+- `calibration_check` — auto-diagnóstico que mede, por simulação com os
+  `totals` do usuário, a taxa de erro tipo I que cada teste de fato entrega
+  nesses dados, classificando cada um como `:calibrado`, `:conservador` ou
+  `:anticonservador`. `forensics_report` o executa por default e imprime o
+  resultado antes de qualquer p-valor.
 - `boundary = :logit | :reflect` em `rozenas_test`
 - Interface Tables.jl nos três tipos de resultado
 - Coerção explícita de entrada: `Float64` com valor inteiro é aceito; valores
@@ -52,9 +57,11 @@ eleitorais, e o pacote se afasta deles deliberadamente:
 
 ### Limitações conhecidas
 - Nenhum teste da bateria detecta *ballot stuffing* proporcional.
-- O teste do último dígito continua levemente anti-conservador (0,08 contra
-  α = 0,05) quando a distribuição de percentuais é fortemente bimodal e muitas
-  contagens ficam entre 10 e 30; um aviso é emitido.
+- O teste do último dígito é anti-conservador quando muitas contagens ficam
+  entre 10 e 50 — chega a 0,37 com seções de 10 a 120 eleitores. Não há
+  `min_value` que resolva em todos os regimes (testado em
+  `validation/18_criterio_ultimo_digito.jl`), por isso a resposta do pacote é
+  `calibration_check`, que mede e avisa.
 - O teste de frações coarse exige percentual *exatamente* igual a k/d, o que
   requer `totals` divisível por d. Nos dados russos, 77 % das seções são
   elegíveis para alguma fração com d ≤ 10 mas só 2,6 % acertam uma — o teste vê

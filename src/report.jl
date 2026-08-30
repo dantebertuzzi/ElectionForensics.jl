@@ -6,6 +6,7 @@
                      benford_digit::Int = 2,
                      benford_null::Symbol = :resampled,
                      penultimate::Bool = false,
+                     calibrate::Bool = true,
                      max_denom::Int = 10,
                      B::Int = 999,
                      rng::AbstractRNG = Random.default_rng(),
@@ -19,6 +20,12 @@ Roda a bateria de testes forenses sobre as contagens de votos de um candidato
 2. Último dígito de `votes` (Beber & Scacco)
 3. Frações coarse de Rozenas (2017) sobre `votes ./ totals`
 4. *(opcional)* Penúltimo dígito, se `penultimate = true`
+
+Com `calibrate = true` (default), roda antes um [`calibration_check`](@ref) dos
+testes de dígito — os dois cujo null uniforme pode não valer para os seus dados
+— e imprime a taxa de erro tipo I que eles de fato entregam aqui. É barato
+(nenhum dos dois usa reamostragem interna) e evita que um p-valor
+anticonservador seja lido como evidência.
 
 Retorna `(benford = ..., last_digit = ..., penultimate = ..., rozenas = ...)`;
 `penultimate` é `nothing` quando não solicitado.
@@ -42,6 +49,7 @@ function forensics_report(votes::AbstractVector{<:Integer},
                           benford_digit::Int = 2,
                           benford_null::Symbol = :resampled,
                           penultimate::Bool = false,
+                     calibrate::Bool = true,
                           max_denom::Int = 10,
                           B::Int = 999,
                           rng::AbstractRNG = Random.default_rng(),
@@ -58,6 +66,21 @@ function forensics_report(votes::AbstractVector{<:Integer},
             "   votos: ", sum(votes), " / ", sum(totals),
             @sprintf(" (%.1f%%)", 100 * sum(votes) / sum(totals)))
     println(io)
+
+    if calibrate
+        alvos = penultimate ? [:last_digit, :penultimate] : [:last_digit]
+        cal = try
+            calibration_check(votes, totals,
+                              CalibrationConfig(R = 150, B = 99, tests = alvos);
+                              rng = rng)
+        catch e
+            e isa ArgumentError ? nothing : rethrow()
+        end
+        if cal !== nothing
+            show(io, MIME"text/plain"(), cal)
+            println(io)
+        end
+    end
 
     # Cada teste tem um mínimo estrutural de contagem. Numa eleição municipal
     # pequena, exigi-los todos abortaria o relatório inteiro; preferimos pular

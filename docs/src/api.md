@@ -11,6 +11,7 @@ benford_test
 last_digit_test
 rozenas_test
 forensics_report
+calibration_check
 ```
 
 ## Configuração
@@ -18,6 +19,7 @@ forensics_report
 ```@docs
 BenfordConfig
 DigitTestConfig
+CalibrationConfig
 ```
 
 ## Resultados
@@ -29,6 +31,7 @@ dígito (Benford, último dígito) ou por fração (Rozenas).
 BenfordResult
 LastDigitResult
 RozenasResult
+CalibrationResult
 ```
 
 ## Utilidades

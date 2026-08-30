@@ -34,12 +34,14 @@ export first_digit, second_digit, last_digit, penultimate_digit,
        benford_test, last_digit_test, rozenas_test, coarse_fractions,
        forensics_report,
        BenfordResult, LastDigitResult, RozenasResult,
-       BenfordConfig, DigitTestConfig
+       BenfordConfig, DigitTestConfig, CalibrationConfig,
+       calibration_check, CalibrationResult
 
 include("utils.jl")
 include("benford.jl")
 include("lastdigit.jl")
 include("rozenas.jl")
+include("calibration.jl")
 include("report.jl")
 include("tables.jl")
 

@@ -66,6 +66,37 @@ perto das fronteiras:
 
 `boundary = :logit` é o default; `:reflect` preserva o comportamento anterior.
 
+## Meça, não confie: `calibration_check`
+
+As três seções acima mostram que a validade de cada null depende do **formato**
+da distribuição de contagens, e que nenhuma estatística escalar simples prediz
+a falha — `validation/18_criterio_ultimo_digito.jl` testa três candidatas e
+encontra correlações de +0,25 a −0,55, com contraexemplos nos dois sentidos.
+
+Por isso o pacote não promete calibração: ele a **mede** nos seus dados.
+[`calibration_check`](@ref) simula eleições limpas com os seus tamanhos de
+seção e um formato de percentuais como o seu, roda cada teste, e reporta a taxa
+de rejeição que ele de fato entrega.
+
+```julia
+julia> calibration_check(votes, totals)
+Auto-diagnóstico de calibração
+2500 seções · 200 eleições limpas simuladas · α = 0.050
+  teste            rejeição   esperado    veredito
+  Benford          0.027      0.050±0.031 calibrado
+  último dígito    0.367      0.050±0.031 anticonservador
+  penúltimo dígito 0.960      0.050±0.031 anticonservador
+  frações coarse   0.080      0.050±0.031 calibrado
+⚠ testes anticonservadores rejeitam dados LIMPOS acima de α; não conclua
+  fraude a partir deles nestes dados
+```
+
+O diagnóstico acerta: em `validation/19_valida_calibration_check.jl`, o pior
+regime tem erro tipo I **medido** de 0,372 e **previsto** de 0,364.
+
+[`forensics_report`](@ref) roda essa checagem por default (`calibrate = true`)
+para os testes de dígito e imprime o resultado **antes** de qualquer p-valor.
+
 ## Multiplicidade
 
 `RozenasResult` reporta excessos por fração. Sob H₀, o maior z entre as 31

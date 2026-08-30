@@ -32,15 +32,19 @@ implementações independentes.
 
 ### As ressalvas que permanecem
 
-1. **M3 (parcial).** O teste do último dígito continua levemente
-   anti-conservador — 0,082 contra α = 0,05 — quando a distribuição de
-   percentuais é fortemente bimodal e muitas contagens ficam entre 10 e 30. Um
-   aviso é emitido, mas o teste roda.
+1. **M3 está fechado** — mas não por um default melhor. Nenhum `min_value`
+   calibra todos os regimes e nenhum diagnóstico escalar prediz a falha
+   (`validation/18`: correlações de +0,25 a −0,55, com contraexemplos nos dois
+   sentidos). A resposta é `calibration_check`: o pacote **mede** a taxa de
+   erro tipo I nos dados do usuário e avisa quando o p-valor não é confiável.
+   Ver seção 5c.
 2. **A validação em dados reais usa fontes estrangeiras.** O CDN do TSE
    bloqueia clientes não-browser deste ambiente, então a calibração real foi
    feita em 29 pleitos americanos (OpenElections) e o poder na Rússia 2012
    (Shpilkin / Kobak et al.). Ver seção 5b. O TSE segue não verificado.
-3. **As correções são minhas, não revisadas por terceiro.** Foram verificadas
+3. **A limitação de exatidão do teste de Rozenas permanece** — é inerente ao
+   método (ver 5b), está documentada, e `max_denom` maior a mitiga.
+4. **As correções são minhas, não revisadas por terceiro.** Foram verificadas
    por execução (178 testes, Aqua, JET, Documenter, Julia 1.10 e 1.12), mas
    passaram por um único par de olhos.
 
@@ -349,6 +353,86 @@ por estado, a identidade `linha-resumo = Σcandidatos + brancos/nulos` e a
 coerência do top-2, e exclui quem não passa.
 
 
+---
+
+## 5c. Como a ressalva M3 foi resolvida
+
+### O defeito, demonstrado em dados reais
+
+Dos 29 pleitos americanos, três rejeitaram no teste do último dígito. A
+Louisiana é a demonstração limpa do problema:
+
+| Corte | p-valor | Perfil dos dígitos 0→9 (%) |
+|---|---|---|
+| `min_value = 10` (default) | **0,0034** | 11,6 · 10,1 · 10,8 · 10,5 · 10,2 · 10,2 · 9,3 · 9,6 · 8,6 · 9,1 |
+| `min_value = 100` | **0,479** | 11,1 · 9,8 · 10,4 · 10,7 · 9,8 · 10,1 · 9,8 · 9,5 · 8,9 · 10,0 |
+
+O perfil é um **gradiente monótono decrescente**, não um excesso em 0 e 5 — a
+assinatura de artefato do null, não de fabricação humana. 20,8 % das contagens
+retidas da Louisiana estão abaixo de 50. Restringir a contagens ≥ 100 dissolve
+a rejeição.
+
+### Por que não bastava mudar o default
+
+| Regime (eleições limpas) | mv=10 | mv=20 | mv=30 | mv=50 | mv=100 | null MC |
+|---|---|---|---|---|---|---|
+| Beta(8,6) totais 150:900 | 0,050 | 0,050 | 0,050 | 0,049 | 0,053 | 0,048 |
+| Beta(0.3,0.3) totais 150:900 | 0,078 | 0,059 | 0,065 | 0,059 | 0,044 | 0,072 |
+| Beta(8,6) totais 20:400 | 0,052 | 0,075 | 0,073 | 0,073 | **0,077** | 0,048 |
+| Beta(0.3,0.3) totais 20:400 | **0,136** | 0,099 | 0,081 | 0,062 | 0,049 | 0,111 |
+
+`min_value = 100` conserta três regimes e **piora** um. Um null reamostrado —
+que funcionou para a 2BL — não ajuda aqui (0,111 no pior caso). E não há
+diagnóstico escalar que prediga a falha: testei proporção de contagens
+pequenas, 5º percentil e desvio-padrão relativo, com correlações de Spearman de
++0,245, −0,545 e −0,027 contra o erro tipo I, e contraexemplos em ambas as
+direções (`validation/18_criterio_ultimo_digito.jl`).
+
+### A resposta: o pacote mede em vez de prometer
+
+`calibration_check(votes, totals)` simula eleições limpas com os **seus**
+`totals` e um formato de percentuais como o seu, roda cada teste, e reporta a
+taxa de rejeição que ele de fato entrega.
+
+```
+Auto-diagnóstico de calibração
+2500 seções · 200 eleições limpas simuladas · α = 0.050
+  teste            rejeição   esperado    veredito
+  Benford          0.027      0.050±0.031 calibrado
+  último dígito    0.367      0.050±0.031 anticonservador
+  penúltimo dígito 0.960      0.050±0.031 anticonservador
+  frações coarse   0.080      0.050±0.031 calibrado
+⚠ testes anticonservadores rejeitam dados LIMPOS acima de α
+```
+
+**O diagnóstico acerta** (`validation/19_valida_calibration_check.jl`):
+
+| Regime | Erro tipo I medido | Previsto pelo diagnóstico | Veredito |
+|---|---|---|---|
+| Beta(8,6) totais 150:900 | 0,040 | 0,060 | calibrado |
+| Beta(0.3,0.3) totais 150:900 | 0,068 | 0,060 | calibrado |
+| Beta(0.3,0.3) totais 20:400 | 0,100 | 0,136 | anticonservador |
+| Beta(8,6) totais 10:120 | **0,372** | **0,364** | anticonservador |
+| Beta(8,6) totais 1000:9000 | 0,052 | 0,028 | calibrado |
+
+**E separa corretamente os três casos reais:**
+
+| UF | p (último dígito) | Taxa medida em dados limpos como os dela | Veredito |
+|---|---|---|---|
+| **LA** | 0,0034 | **0,164** | anticonservador — p-valor não confiável |
+| ID | 0,0203 | 0,068 | calibrado — p-valor confiável |
+| MO | 0,0215 | 0,064 | calibrado — p-valor confiável |
+| NY | 0,3194 | 0,068 | calibrado |
+| WY | 0,7189 | 0,032 | calibrado |
+
+A Louisiana — o falso positivo que eu havia demonstrado à mão — é marcada.
+Idaho e Missouri passam, e são exatamente o ruído de teste múltiplo esperado
+(1,5 rejeições esperadas em 29 a α = 0,05; sobram 2).
+
+`forensics_report` roda a checagem por default e a imprime **antes** de
+qualquer p-valor.
+
+
 ## 6. Eixo D — a suíte de testes
 
 A suíte original (76 asserções) tem boa cobertura de **caminhos** e de
@@ -438,7 +522,7 @@ O patch leva a suíte a 105 asserções, adicionando: valores analíticos para
 - [x] Conservadorismo do Rozenas sob shares em U — corrigido pela escala logit (0,000 → 0,030; poder 0,48 → 0,70)
 - [x] Retornos compatíveis com Tables.jl — os três tipos, com `schema` explícito
 
-- [ ] **M3 residual:** último dígito a 0,082 sob shares bimodais (aviso emitido)
+- [x] **M3 resolvido** por `calibration_check` (seção 5c) — o pacote mede a taxa de erro tipo I nos dados do usuário e marca os testes não confiáveis
 
 **Não verificado**
 - [ ] Dados reais do TSE — o CDN respondeu **HTTP 403** a clientes não-browser

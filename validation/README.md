@@ -29,3 +29,5 @@ julia --project=. -t auto validation/01_calibracao_benford.jl
 | `17_heterogeneidade_secoes.jl` | a nula do Rozenas aguenta seções de N=2 a N=5000? | sim: erro tipo I 0,011–0,055 com totais reais |
 |_(o patch da primeira rodada foi aplicado; ver `git log`)_|||
 | `15_rozenas_escala.jl` | qual escala de jitter calibra a nula do Rozenas? | **logit**: erro tipo I 0,000 → 0,030 e poder 0,48 → 0,67 sob shares em U |
+| `18_criterio_ultimo_digito.jl` | existe diagnóstico escalar que prediga a falha do null uniforme? | **não**: correlações de +0,25 a −0,55 com contraexemplos nos dois sentidos |
+| `19_valida_calibration_check.jl` | `calibration_check` acerta a taxa que prevê? | sim: 0,372 medido vs 0,364 previsto no pior regime |

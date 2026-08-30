@@ -420,6 +420,130 @@ using Statistics
         @test_throws ArgumentError forensics_report([0], [0]; io = IOBuffer())
     end
 
+    @testset "calibration_check — validação de entrada" begin
+        @test_throws DimensionMismatch calibration_check([1, 2], [10])
+        @test_throws ArgumentError calibration_check(Int[], Int[])
+        @test_throws ArgumentError calibration_check([5], [0])
+        @test_throws ArgumentError calibration_check([11], [10])
+        @test_throws ArgumentError calibration_check([5], [10]; alpha = 0.0)
+        @test_throws ArgumentError calibration_check([5], [10]; alpha = 1.0)
+        @test_throws ArgumentError calibration_check([5], [10]; R = 5)
+        @test_throws ArgumentError calibration_check([5], [10]; tests = Symbol[])
+        @test_throws ArgumentError calibration_check([5], [10]; tests = [:bogus])
+    end
+
+    @testset "calibration_check — detecta o que sabemos estar quebrado" begin
+        # Regime onde o null uniforme do último dígito falha por construção:
+        # seções minúsculas ⇒ contagens entre 10 e 70. A simulação de
+        # validation/18 mede erro tipo I ≈ 0,37 aqui.
+        r1 = MersenneTwister(31)
+        tot_ruim = rand(r1, 10:120, 2000)
+        p1 = rand(r1, Beta(8, 6), 2000)
+        v_ruim = [rand(r1, Binomial(tot_ruim[i], p1[i])) for i in 1:2000]
+        cal_ruim = calibration_check(v_ruim, tot_ruim;
+                                     R = 120, tests = [:last_digit],
+                                     rng = MersenneTwister(32))
+        @test cal_ruim.verdict[1] === :anticonservador
+        @test cal_ruim.rejection_rate[1] > 0.15
+
+        # Regime onde o mesmo teste é sabidamente calibrado.
+        r2 = MersenneTwister(33)
+        tot_bom = rand(r2, 300:3000, 2000)
+        p2 = rand(r2, Beta(8, 6), 2000)
+        v_bom = [rand(r2, Binomial(tot_bom[i], p2[i])) for i in 1:2000]
+        cal_bom = calibration_check(v_bom, tot_bom;
+                                    R = 120, tests = [:last_digit],
+                                    rng = MersenneTwister(34))
+        @test cal_bom.verdict[1] !== :anticonservador
+        @test cal_bom.rejection_rate[1] < 0.15
+
+        # O penúltimo dígito é anticonservador em seções de tamanho típico
+        # (validation/07 mede 0,503 com totais 150–900), mas fica calibrado
+        # quando as contagens cobrem duas décadas — que é o que `null_valid`
+        # sinaliza. O diagnóstico tem de distinguir os dois casos.
+        r3 = MersenneTwister(36)
+        tot_est = rand(r3, 150:900, 2000)
+        p3 = rand(r3, Beta(8, 6), 2000)
+        v_est = [rand(r3, Binomial(tot_est[i], p3[i])) for i in 1:2000]
+        cal_pen = calibration_check(v_est, tot_est;
+                                    R = 120, tests = [:penultimate],
+                                    rng = MersenneTwister(37))
+        @test cal_pen.verdict[1] === :anticonservador
+        @test cal_pen.rejection_rate[1] > 0.2
+        @test last_digit_test(v_est; position = :penultimate, warn = false).null_valid == false
+
+        # contagens cobrindo duas décadas: o mesmo teste passa
+        # (validation/07 mede 0,053 com totais uniformes em 100–9999)
+        r4 = MersenneTwister(38)
+        tot_amplo = rand(r4, 100:9999, 2000)
+        p4 = rand(r4, Beta(8, 6), 2000)
+        v_amplo = [rand(r4, Binomial(tot_amplo[i], p4[i])) for i in 1:2000]
+        cal_amplo = calibration_check(v_amplo, tot_amplo;
+                                      R = 120, tests = [:penultimate],
+                                      rng = MersenneTwister(39))
+        @test cal_amplo.verdict[1] !== :anticonservador
+    end
+
+    @testset "calibration_check — estrutura e Tables.jl" begin
+        rng = seed("calibration_check — estrutura e Tables.jl")
+        m = 400
+        totals = rand(rng, 150:900, m)
+        p = rand(rng, Beta(8, 6), m)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:m]
+        cal = calibration_check(votes, totals; R = 40, B = 99,
+                                tests = [:last_digit, :rozenas], rng = rng)
+        @test cal.tests == [:last_digit, :rozenas]
+        @test cal.alpha == 0.05
+        @test cal.m == m
+        @test cal.R == 40
+        @test all(0 .≤ cal.rejection_rate .≤ 1)
+        @test all(cal.verdict .∈ Ref((:calibrado, :conservador, :anticonservador)))
+
+        @test Tables.istable(typeof(cal))
+        linhas = Tables.rows(cal)
+        @test length(linhas) == 2
+        @test keys(first(linhas)) == Tables.schema(cal).names
+        @test Tables.columntable(cal).test == cal.tests
+        @test Tables.columntable(cal).ratio ≈ cal.rejection_rate ./ cal.alpha
+
+        # reprodutível com a mesma semente
+        c1 = calibration_check(votes, totals; R = 40, B = 99,
+                               tests = [:last_digit], rng = MersenneTwister(77))
+        c2 = calibration_check(votes, totals; R = 40, B = 99,
+                               tests = [:last_digit], rng = MersenneTwister(77))
+        @test c1.rejection_rate == c2.rejection_rate
+
+        io = IOBuffer(); show(io, MIME"text/plain"(), cal)
+        @test occursin("Auto-diagnóstico", String(take!(io)))
+    end
+
+    @testset "_verdict — fronteiras" begin
+        vd = ElectionForensics._verdict
+        @test vd(0.05, 0.05, 0.01) === :calibrado
+        @test vd(0.071, 0.05, 0.01) === :anticonservador   # > α + 2·se
+        @test vd(0.069, 0.05, 0.01) === :calibrado
+        @test vd(0.029, 0.05, 0.01) === :conservador       # < α − 2·se
+        @test vd(0.031, 0.05, 0.01) === :calibrado
+        @test vd(0.9, 0.05, 0.0) === :calibrado            # se = 0 ⇒ sem juízo
+    end
+
+    @testset "forensics_report — calibração integrada" begin
+        rng = seed("forensics_report — calibração integrada")
+        totals = rand(rng, 10:120, 1200)
+        p = rand(rng, Beta(8, 6), 1200)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:1200]
+        buf = IOBuffer()
+        forensics_report(votes, totals; B = 99, io = buf, rng = MersenneTwister(41))
+        saida = String(take!(buf))
+        @test occursin("Auto-diagnóstico", saida)
+        @test occursin("anticonservador", saida)
+
+        buf2 = IOBuffer()
+        forensics_report(votes, totals; B = 99, calibrate = false, io = buf2,
+                         rng = MersenneTwister(41))
+        @test !occursin("Auto-diagnóstico", String(take!(buf2)))
+    end
+
     @testset "Aqua" begin
         Aqua.test_all(ElectionForensics)
     end

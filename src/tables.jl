@@ -59,3 +59,18 @@ Tables.schema(r::RozenasResult) = Tables.Schema(
     (:fraction, :numerator, :denominator, :observed,
      :null_mean, :null_sd, :zscore, :qvalue),
     (Rational{Int}, Int, Int, Int, Float64, Float64, Float64, Float64))
+
+Tables.istable(::Type{<:CalibrationResult}) = true
+Tables.rowaccess(::Type{<:CalibrationResult}) = true
+function Tables.rows(r::CalibrationResult)
+    return [(test = r.tests[i],
+             alpha = r.alpha,
+             rejection_rate = r.rejection_rate[i],
+             se = r.se[i],
+             ratio = r.rejection_rate[i] / r.alpha,
+             verdict = r.verdict[i])
+            for i in eachindex(r.tests)]
+end
+Tables.schema(r::CalibrationResult) = Tables.Schema(
+    (:test, :alpha, :rejection_rate, :se, :ratio, :verdict),
+    (Symbol, Float64, Float64, Float64, Float64, Symbol))
