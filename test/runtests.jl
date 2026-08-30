@@ -1,7 +1,10 @@
 using ElectionForensics
 using Test
+using Aqua
+using Tables
 using Random
 using Distributions
+using Statistics
 
 @testset "ElectionForensics.jl" begin
 
@@ -18,9 +21,14 @@ using Distributions
 
         @test last_digit(1230) == 0
         @test last_digit(7) == 7
+        @test last_digit(-7) == 7
+        @test last_digit(0) == 0
+
         @test penultimate_digit(1234) == 3
         @test penultimate_digit(10) == 1
+        @test penultimate_digit(-1234) == 3
         @test_throws ArgumentError penultimate_digit(5)
+        @test_throws ArgumentError penultimate_digit(0)
     end
 
     @testset "coarse_fractions" begin
@@ -31,14 +39,17 @@ using Distributions
         @test_throws ArgumentError coarse_fractions(1)
     end
 
-    rng = MersenneTwister(2026)
+    # Uma semente por testset. Com um RNG encadeado, inserir um teste no meio
+    # muda os dados de todos os posteriores e falhas viram mistério.
+    seed(nome) = MersenneTwister(hash(("ElectionForensics", nome)))
 
     @testset "Benford — dados log-uniformes conformes" begin
+        rng = seed("Benford — dados log-uniformes conformes")
         # log-uniforme em [1, 10^5) segue Benford exatamente
         x = [round(Int, 10.0^(5rand(rng))) for _ in 1:5000]
         x = [xi for xi in x if xi ≥ 10]
-        r1 = benford_test(x; digit = 1)
-        r2 = benford_test(x; digit = 2)
+        r1 = benford_test(x; digit = 1, null = :benford, warn = false)
+        r2 = benford_test(x; digit = 2, null = :benford, warn = false)
         @test r1.pvalue > 0.001
         @test r2.pvalue > 0.001
         @test r1.conformity in (:conforme, :aceitavel)
@@ -48,14 +59,16 @@ using Distributions
     end
 
     @testset "Benford — dados fabricados não conformes" begin
+        rng = seed("Benford — dados fabricados não conformes")
         # primeiro dígito uniforme em 1:9 viola fortemente a 1BL
         x = [d * 10^rand(rng, 1:4) + rand(rng, 0:9) for d in rand(rng, 1:9, 3000)]
-        r = benford_test(x; digit = 1)
+        r = benford_test(x; digit = 1, null = :benford, warn = false)
         @test r.pvalue < 1e-6
         @test r.conformity == :nao_conforme
     end
 
     @testset "último dígito — limpo vs. fabricado" begin
+        rng = seed("último dígito — limpo vs. fabricado")
         limpo = rand(rng, 100:99999, 5000)
         rl = last_digit_test(limpo)
         @test rl.pvalue > 0.001
@@ -75,6 +88,7 @@ using Distributions
     end
 
     @testset "Rozenas — dados limpos não rejeitam" begin
+        rng = seed("Rozenas — dados limpos não rejeitam")
         m = 2000
         totals = rand(rng, 150:900, m)
         p = rand(rng, Beta(8, 6), m)
@@ -86,6 +100,7 @@ using Distributions
     end
 
     @testset "Rozenas — fraude injetada rejeita" begin
+        rng = seed("Rozenas — fraude injetada rejeita")
         m = 2000
         totals = [rand(rng, 15:90) * 10 for _ in 1:m]  # divisíveis por 10
         p = rand(rng, Beta(8, 6), m)
@@ -101,14 +116,91 @@ using Distributions
         @test r.zscore > 2
     end
 
+    @testset "Benford — argumentos inválidos" begin
+        @test_throws ArgumentError benford_test([1, 2]; digit = 3)
+        @test_throws ArgumentError benford_test([10, 20]; null = :bogus)
+        x = [1, 2, 3, 4, 5, 6, 7, 8, 9]  # todos < 10 para 2BL
+        @test_throws ArgumentError benford_test(x; digit = 2, warn = false)
+        x = [0, 0, 0]  # todos < 1 para 1BL
+        @test_throws ArgumentError benford_test(x; digit = 1, warn = false)
+    end
+
+    @testset "Benford — n_excluded" begin
+        x = [1, 5, 9, 10, 20, 30]  # 1BL exclui nada, 2BL exclui 1,5,9
+        r1 = benford_test(x; digit = 1, warn = false)
+        @test r1.n_excluded == 0
+        @test r1.n == 6
+        r2 = benford_test(x; digit = 2, warn = false)
+        @test r2.n_excluded == 3
+        @test r2.n == 3
+    end
+
+    @testset "benford_expected" begin
+        e1 = ElectionForensics.benford_expected(1)
+        @test length(e1) == 9
+        @test isapprox(sum(e1), 1.0; atol = 1e-10)
+        @test e1[1] > e1[9]  # dígito 1 mais provável que 9
+        e2 = ElectionForensics.benford_expected(2)
+        @test length(e2) == 10
+        @test isapprox(sum(e2), 1.0; atol = 1e-10)
+        @test_throws ArgumentError ElectionForensics.benford_expected(0)
+        @test_throws ArgumentError ElectionForensics.benford_expected(3)
+    end
+
+    @testset "último dígito — argumentos inválidos" begin
+        @test_throws ArgumentError last_digit_test([1, 2]; position = :invalid)
+        x = [1, 2, 3]  # todos < 10 (default para :last)
+        @test_throws ArgumentError last_digit_test(x)
+        x = [10, 20, 30]
+        @test_throws ArgumentError last_digit_test(x; position = :penultimate)
+    end
+
+    @testset "último dígito — min_value customizado" begin
+        x = [5, 8, 9, 15, 20, 50]
+        r = last_digit_test(x; position = :last, min_value = 10, warn = false)
+        @test r.n == 3
+        @test r.n_excluded == 3
+        r2 = last_digit_test(x; position = :last, min_value = 20, warn = false)
+        @test r2.n == 2
+        @test r2.n_excluded == 4
+        # abaixo do mínimo estrutural o null uniforme é impossível
+        @test_throws ArgumentError last_digit_test(x; min_value = 5)
+        @test_throws ArgumentError last_digit_test(x; position = :penultimate,
+                                                   min_value = 50)
+    end
+
     @testset "Rozenas — validação de entradas" begin
         @test_throws DimensionMismatch rozenas_test([1, 2], [10])
         @test_throws ArgumentError rozenas_test([5], [0])
         @test_throws ArgumentError rozenas_test([11], [10])
         @test_throws ArgumentError rozenas_test(Int[], Int[])
+        @test_throws ArgumentError rozenas_test([10], [100]; B = 50)
+    end
+
+    @testset "Rozenas — frações customizadas e h manual" begin
+        rng = seed("Rozenas — frações customizadas e h manual")
+        m = 500
+        totals = rand(rng, 150:900, m)
+        p = rand(rng, Beta(8, 6), m)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:m]
+        custom_fr = [1//2, 2//3, 1//5]
+        r = rozenas_test(votes, totals; fractions = custom_fr, B = 199, rng = rng)
+        @test r.fractions == custom_fr
+        @test r.pvalue ≥ 0
+        @test length(r.null_totals) == 199
+
+        r2 = rozenas_test(votes, totals; h = 0.05, B = 199, rng = rng)
+        @test r2.h == 0.05
+        @test r2.pvalue ≥ 0
+    end
+
+    @testset "Rozenas — h inválido" begin
+        @test_throws ArgumentError rozenas_test([10], [100]; h = 0.0)
+        @test_throws ArgumentError rozenas_test([10], [100]; h = -0.1)
     end
 
     @testset "forensics_report" begin
+        rng = seed("forensics_report")
         m = 800
         totals = rand(rng, 100:600, m)
         votes = [rand(rng, Binomial(totals[i], 0.55)) for i in 1:m]
@@ -116,6 +208,219 @@ using Distributions
                                io = IOBuffer())
         @test res.benford isa BenfordResult
         @test res.last_digit isa LastDigitResult
+        @test res.penultimate === nothing          # opt-in desde a correção
         @test res.rozenas isa RozenasResult
+
+        res2 = forensics_report(votes, totals; B = 99, rng = rng,
+                                penultimate = true, io = IOBuffer())
+        @test res2.penultimate isa LastDigitResult
+    end
+
+    @testset "Rozenas — q-valores de Benjamini–Hochberg" begin
+        rng = seed("Rozenas — q-valores de Benjamini–Hochberg")
+        m = 800
+        totals = rand(rng, 150:900, m)
+        p = rand(rng, Beta(8, 6), m)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:m]
+        r = rozenas_test(votes, totals; B = 199, rng = rng)
+        @test length(r.qvalues) == length(r.fractions)
+        @test all(0 .< r.qvalues .<= 1)
+        # BH é monótono na ordem dos p brutos
+        @test issorted(sort(r.qvalues))
+    end
+
+    @testset "_bh_adjust — valores analíticos" begin
+        bh = ElectionForensics._bh_adjust
+        @test bh(Float64[]) == Float64[]
+        @test bh([0.5]) ≈ [0.5]
+        # p = [.01,.02,.03,.04] , n=4 -> n*p/k = [.04,.04,.04,.04]
+        @test bh([0.01, 0.02, 0.03, 0.04]) ≈ fill(0.04, 4)
+        # monotonicidade forçada: p=[.01,.5] -> [.02,.5]
+        @test bh([0.01, 0.5]) ≈ [0.02, 0.5]
+        @test all(bh([0.9, 0.95]) .≈ 0.95)
+    end
+
+    @testset "penúltimo dígito — null_valid sinaliza inaplicabilidade" begin
+        rng = seed("penúltimo dígito — null_valid sinaliza inaplicabilidade")
+        # contagens numa única década: null uniforme não é defensável
+        estreito = rand(rng, 150:900, 3000)
+        r = last_digit_test(estreito; position = :penultimate, warn = false)
+        @test r.null_valid == false
+        # contagens cobrindo > 2 décadas (log-uniforme): aplicável
+        largo = [round(Int, 10.0^(2 + 3rand(rng))) for _ in 1:3000]
+        @test last_digit_test(largo; position = :penultimate, warn = false).null_valid
+        # :last nunca é marcado inválido
+        @test last_digit_test(estreito; warn = false).null_valid
+    end
+
+    @testset "Benford — null reamostrado é calibrado onde o clássico não é" begin
+        # Seções homogêneas (caso TSE). A afirmação é sobre a TAXA de rejeição
+        # sob H0, não sobre um sorteio: um único p-valor cruza α em ~5 % das
+        # sementes por construção. 40 réplicas independentes, seeds fixas.
+        nrep = 40
+        rej_classico = 0
+        rej_reamostr = 0
+        for k in 1:nrep
+            r = MersenneTwister(9000 + k)
+            totals = rand(r, 200:400, 2000)
+            p = rand(r, Beta(8, 6), 2000)
+            votes = [rand(r, Binomial(totals[i], p[i])) for i in 1:2000]
+            rej_classico += benford_test(votes; digit = 2, null = :benford,
+                                         warn = false).pvalue < 0.05
+            rej_reamostr += benford_test(votes; digit = 2, null = :resampled,
+                                         B = 299, rng = r).pvalue < 0.05
+        end
+        # null clássico: falso positivo maciço (medido em ~0,72)
+        @test rej_classico / nrep > 0.4
+        # null reamostrado: taxa compatível com α = 0,05
+        # (Binomial(40, 0.05): P(X ≥ 6) ≈ 0,016 — folga suficiente contra flake)
+        @test rej_reamostr <= 5
+
+        r0 = MersenneTwister(4242)
+        totals = rand(r0, 200:400, 2000)
+        p = rand(r0, Beta(8, 6), 2000)
+        votes = [rand(r0, Binomial(totals[i], p[i])) for i in 1:2000]
+        reamostr = benford_test(votes; digit = 2, null = :resampled, B = 299, rng = r0)
+        classico = benford_test(votes; digit = 2, null = :benford, warn = false)
+        @test reamostr.pvalue_asymptotic == classico.pvalue
+        @test reamostr.null === :resampled
+        @test reamostr.chi2 == classico.chi2
+    end
+
+    @testset "Aqua" begin
+        Aqua.test_all(ElectionForensics)
+    end
+
+    @testset "coerção de entrada — Float, missing, NaN" begin
+        # Float com valor inteiro é aceito
+        @test benford_test([10.0, 20.0, 30.0, 45.0]; warn = false).n == 4
+        @test last_digit_test([10.0, 25.0, 33.0]; warn = false).n == 3
+        @test rozenas_test([50.0, 60.0], [100.0, 120.0]; B = 99).m == 2
+
+        # Float fracionário é erro: contagem de votos não é fracionária
+        @test_throws ArgumentError benford_test([10.5, 20.0]; warn = false)
+        @test_throws ArgumentError benford_test([10.0, NaN]; warn = false)
+        @test_throws ArgumentError benford_test([10.0, Inf]; warn = false)
+
+        # `missing` exige consentimento explícito
+        x = Union{Missing,Int}[10, 20, 30, missing]
+        @test_throws ArgumentError benford_test(x; warn = false)
+        @test benford_test(x; skipmissing = true, warn = false).n == 3
+        @test last_digit_test(x; skipmissing = true, warn = false).n == 3
+        # em rozenas descartar desalinharia os pares
+        @test_throws ArgumentError rozenas_test(x, Union{Missing,Int}[1, 2, 3, 4];
+                                                skipmissing = true, B = 99)
+
+        @test_throws ArgumentError benford_test(Any["a", 10]; warn = false)
+    end
+
+    @testset "Rozenas — escala do jitter" begin
+        rng = seed("Rozenas — escala do jitter")
+        m = 800
+        totals = rand(rng, 150:900, m)
+        p = rand(rng, Beta(0.5, 0.5), m)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:m]
+
+        rl = rozenas_test(votes, totals; B = 199, rng = MersenneTwister(1))
+        rr = rozenas_test(votes, totals; B = 199, boundary = :reflect,
+                          rng = MersenneTwister(1))
+        @test rl.boundary === :logit          # default
+        @test rr.boundary === :reflect
+        @test rl.h != rr.h                    # bandas em escalas diferentes
+        @test 0 < rl.pvalue ≤ 1
+        @test 0 < rr.pvalue ≤ 1
+        @test_throws ArgumentError rozenas_test(votes, totals; boundary = :bogus)
+
+        # Sob shares em U, a nula com reflexão superestima T e o teste fica
+        # conservador; a escala logit encosta na taxa nominal.
+        # (validation/15_rozenas_escala.jl mede: 0,012 vs 0,036)
+        @test mean(rr.null_totals) ≥ mean(rl.null_totals)
+    end
+
+    @testset "_silverman — banda degenerada é sinalizada" begin
+        h, deg = ElectionForensics._silverman([0.5, 0.5, 0.5, 0.5])
+        @test deg
+        @test h == ElectionForensics._H_FLOOR
+        h2, deg2 = ElectionForensics._silverman(collect(0.0:0.01:1.0))
+        @test !deg2
+        @test h2 > 0
+        # valor analítico: 0.9 · min(σ, IQR/1.34) · m^(-1/5)
+        v = collect(1.0:100.0)
+        h3, _ = ElectionForensics._silverman(v)
+        esperado = 0.9 * min(std(v), (quantile(v, .75) - quantile(v, .25)) / 1.34) *
+                   100^(-1/5)
+        @test h3 ≈ esperado
+    end
+
+    @testset "conformidade de Nigrini — fronteiras fechadas" begin
+        nc = ElectionForensics._nigrini_conformity
+        @test nc(0.0060, 1) === :conforme       # limite superior é inclusivo
+        @test nc(0.0061, 1) === :aceitavel
+        @test nc(0.0120, 1) === :aceitavel
+        @test nc(0.0150, 1) === :marginal
+        @test nc(0.0151, 1) === :nao_conforme
+        @test nc(0.0080, 2) === :conforme
+        @test nc(0.0120, 2) === :marginal
+        @test nc(0.0121, 2) === :nao_conforme
+    end
+
+    @testset "Tables.jl" begin
+        rng = seed("Tables.jl")
+        m = 600
+        totals = rand(rng, 150:900, m)
+        p = rand(rng, Beta(8, 6), m)
+        votes = [rand(rng, Binomial(totals[i], p[i])) for i in 1:m]
+
+        b = benford_test(votes; B = 99, rng = rng, warn = false)
+        l = last_digit_test(votes; warn = false)
+        z = rozenas_test(votes, totals; B = 99, rng = rng)
+
+        for r in (b, l, z)
+            @test Tables.istable(typeof(r))
+            @test Tables.rowaccess(typeof(r))
+            sch = Tables.schema(r)
+            rows = Tables.rows(r)
+            @test length(sch.names) == length(first(rows))
+            @test keys(first(rows)) == sch.names
+            @test length(Tables.columntable(r)[first(sch.names)]) == length(rows)
+        end
+
+        @test length(Tables.rows(b)) == 10
+        @test length(Tables.rows(l)) == 10
+        @test length(Tables.rows(z)) == length(z.fractions)
+
+        # a tabela reproduz os campos do struct
+        bt = Tables.columntable(b)
+        @test bt.count == b.counts
+        @test bt.observed ≈ b.observed
+        @test sum(bt.count) == b.n
+        zt = Tables.columntable(z)
+        @test sum(zt.observed) == z.total_observed
+        @test zt.qvalue == z.qvalues
+    end
+
+    @testset "forensics_report — degradação graciosa" begin
+        # eleição minúscula: Benford e último dígito são inaplicáveis, mas o
+        # relatório não pode abortar
+        votes  = [3, 5, 2, 7, 4, 6, 3, 8, 5, 4, 2, 9, 6, 3, 7, 5]
+        totals = [12, 14, 11, 16, 13, 15, 12, 17, 14, 13, 11, 18, 15, 12, 16, 14]
+        buf = IOBuffer()
+        res = forensics_report(votes, totals; B = 99, io = buf,
+                               rng = MersenneTwister(5))
+        @test res.benford === nothing
+        @test res.last_digit === nothing
+        @test res.rozenas isa RozenasResult
+        saida = String(take!(buf))
+        @test occursin("não aplicável", saida)
+    end
+
+    @testset "forensics_report — validação de entrada" begin
+        @test_throws DimensionMismatch forensics_report([1, 2], [10];
+                                                        io = IOBuffer())
+        @test_throws ArgumentError forensics_report([0], [0]; io = IOBuffer())
+    end
+
+    @testset "Aqua" begin
+        Aqua.test_all(ElectionForensics)
     end
 end

@@ -63,14 +63,67 @@ function _sig_color(p)
     return :green
 end
 
-# largura de banda de Silverman com salvaguardas
+# Piso de banda usado quando a dispersão amostral é nula ou não finita — por
+# exemplo, todas as seções com o mesmo percentual. Não é uma escolha
+# estatística: é o menor jitter que ainda produz uma nula não degenerada.
+# `_silverman` sinaliza esse caso devolvendo `degenerate = true`.
+const _H_FLOOR = 0.01
+
+"""
+    _silverman(v) -> (h, degenerate)
+
+Banda de Silverman `0.9 · min(σ, IQR/1.34) · m^(-1/5)`. Quando a dispersão é
+nula ou não finita, devolve `(_H_FLOOR, true)` — o chamador decide se avisa.
+"""
 function _silverman(v::AbstractVector{<:Real})
     m = length(v)
-    m > 1 || return 0.01
+    m > 1 || return (_H_FLOOR, true)
     s = std(v)
     iqrv = quantile(v, 0.75) - quantile(v, 0.25)
     spread = min(s, iqrv / 1.34)
     spread ≤ 0 && (spread = max(s, iqrv / 1.34))
     h = 0.9 * spread * m^(-1 / 5)
-    return (isfinite(h) && h > 0) ? h : 0.01
+    return (isfinite(h) && h > 0) ? (h, false) : (_H_FLOOR, true)
+end
+
+# ajuste de Benjamini–Hochberg (FDR) para p-valores múltiplos
+function _bh_adjust(p::AbstractVector{<:Real})
+    n = length(p)
+    n == 0 && return Float64[]
+    ord = sortperm(p)
+    q = Vector{Float64}(undef, n)
+    running = 1.0
+    @inbounds for k in n:-1:1
+        running = min(running, n * p[ord[k]] / k)
+        q[ord[k]] = running
+    end
+    return q
+end
+
+
+# ── coerção de entrada ───────────────────────────────────────────────
+#
+# CSVs eleitorais chegam como Float64 ou com `missing`. Coagimos de forma
+# explícita e ruidosa: nada é descartado em silêncio numa ferramenta forense.
+
+_coerce_counts(x::AbstractVector{<:Integer}; kwargs...) = x
+
+function _coerce_counts(x::AbstractVector; skipmissing::Bool = false,
+                        name::AbstractString = "x")
+    nmiss = count(ismissing, x)
+    if nmiss > 0 && !skipmissing
+        throw(ArgumentError("$name contém $nmiss valores `missing`; passe \
+            `skipmissing = true` para descartá-los explicitamente"))
+    end
+    out = Vector{Int}(undef, 0)
+    sizehint!(out, length(x) - nmiss)
+    @inbounds for xi in x
+        ismissing(xi) && continue
+        xi isa Real || throw(ArgumentError("$name contém elemento não numérico: $xi"))
+        isfinite(xi) || throw(ArgumentError("$name contém `$xi`; contagens devem ser finitas"))
+        isinteger(xi) || throw(ArgumentError("$name contém o valor não inteiro $xi; \
+            contagens de votos devem ser inteiras"))
+        push!(out, Int(xi))
+    end
+    return out
 end
