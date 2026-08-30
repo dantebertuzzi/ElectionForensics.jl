@@ -28,7 +28,7 @@ calibração de cada null verificada por simulação (`validation/`).
   BIC em vez da correlação entre densidades de L consecutivos, e teto de
   iterações em todos os laços. Toda mistura carrega o diagnóstico de aderência
   `misfit`
-- Interface Tables.jl nos três tipos de resultado
+- Interface Tables.jl nos cinco tipos de resultado
 - Coerção explícita de entrada: `Float64` com valor inteiro é aceito; valores
   fracionários e `NaN` são erro; `missing` exige `skipmissing = true`
 - `election_fingerprint` e `log_vote_rate` — fingerprint de Klimek et al.
@@ -36,6 +36,11 @@ calibração de cada null verificada por simulação (`validation/`).
   curtose da taxa logarítmica de voto. Diagnóstico visual, sem p-valor. O
   modelo paramétrico de fraude do artigo não está implementado (especificação
   no Supporting Information, fora do preprint)
+- `FingerprintConfig` — `bins` (resolução do histograma) e
+  `vote_axis = :electorate | :valid`, que escolhe o denominador do eixo
+  vertical. O default `:electorate` (`Wᵢ/Nᵢ`) é o do artigo; `:valid`
+  (`Wᵢ/Vᵢ`) é a convenção de boa parte das reimplementações e muda a leitura
+  do eixo
 - Suíte `validation/` com calibração sob H₀, curvas de poder e referência
   cruzada com `scipy`
 
