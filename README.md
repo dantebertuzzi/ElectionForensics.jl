@@ -1,151 +1,171 @@
 # ElectionForensics.jl
 
-Forense eleitoral em Julia: teste de frações coarse de **Rozenas (2017)**,
-lei de **Benford** (1º e 2º dígitos) e testes de **último/penúltimo dígito**
-(Beber & Scacco 2012), com relatório integrado no terminal.
+[![CI](https://github.com/dantebertuzzi/ElectionForensics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/dantebertuzzi/ElectionForensics.jl/actions/workflows/CI.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Instalação
+Election forensics in Julia: the coarse-fraction test of **Rozenas (2017)**,
+**Benford**'s law (1st and 2nd digits), **last/penultimate digit** tests
+(Beber & Scacco 2012), and the **election fingerprint** of Klimek et al.
+(2012), with an integrated terminal report.
+
+What sets this package apart is not the list of tests but its honesty about
+when they hold: several classical nulls from the literature are **not** valid
+for electoral counts, and `calibration_check` measures the type I error rate
+each test actually delivers on *your* data before you conclude anything.
+
+## Installation
 
 ```julia
 ] add https://github.com/dantebertuzzi/ElectionForensics.jl
 ```
 
-## Uso rápido
+## Quick start
 
 ```julia
 using ElectionForensics
 
-# votes[i]  = votos do candidato na seção i
-# totals[i] = votos válidos na seção i
+# votes[i]  = votes for the candidate in polling station i
+# totals[i] = valid votes in polling station i
 
-res = forensics_report(votes, totals)   # bateria completa, saída colorida
+res = forensics_report(votes, totals)   # full battery, colored output
 
 res.rozenas.pvalue
 res.benford.conformity
 ```
 
-Testes individuais:
+Individual tests:
 
 ```julia
-benford_test(votes; digit = 2)                    # 2BL, null reamostrado
+benford_test(votes; digit = 2)                    # 2BL, resampled null
 last_digit_test(votes)                            # Beber & Scacco
-last_digit_test(votes; position = :penultimate)   # ⚠ null uniforme frágil
+last_digit_test(votes; position = :penultimate)   # ⚠ fragile uniform null
 rozenas_test(votes, totals; boundary = :logit, B = 999)
+rozenas_test(votes, totals; null = :betabinomial) # the `spikes` null
 coarse_fractions(10)                              # 1/2, 1/3, 2/3, 1/4, ...
+calibration_check(votes, totals)                  # does the p-value mean anything here?
 ```
 
-Contagens vindas de CSV (`Float64`, `missing`) são coagidas de forma explícita:
-valores fracionários e `NaN` são erro, e `missing` exige `skipmissing = true`.
+Counts coming from CSV (`Float64`, `missing`) are coerced explicitly:
+fractional values and `NaN` raise an error, and `missing` requires
+`skipmissing = true`.
 
-Os três resultados implementam Tables.jl — uma linha por dígito ou por fração:
+Five of the six result types implement Tables.jl — one row per digit, per
+fraction, per test, or per occupied histogram cell:
 
 ```julia
 using Tables, DataFrames
-DataFrame(benford_test(votes))     # digit, count, observed, expected, excess, ...
+DataFrame(benford_test(votes))          # digit, count, observed, expected, excess, ...
 DataFrame(rozenas_test(votes, totals))  # fraction, observed, null_mean, zscore, qvalue
 ```
 
-## Métodos
+## Methods
 
-**Rozenas (2017).** Conta seções cujo percentual `votes/totals` é
-*exatamente* uma fração irredutível k/d com d ≤ `max_denom` (comparação em
-aritmética racional, sem erro de float). A distribuição nula vem de bootstrap
-paramétrico: percentuais perturbados por kernel gaussiano e contagens
-reamostradas de `Binomial(totals[i], p̃ᵢ)`. P-valor unilateral com correção
-`(1 + #{T* ≥ T}) / (B + 1)`.
+**Rozenas (2017).** Counts polling stations whose vote share `votes/totals` is
+*exactly* an irreducible fraction k/d with d ≤ `max_denom` (compared in
+rational arithmetic, with no floating-point error). The null distribution comes
+from a parametric bootstrap: shares perturbed by a Gaussian kernel and counts
+resampled from `Binomial(totals[i], p̃ᵢ)`. One-sided p-value with the
+`(1 + #{T* ≥ T}) / (B + 1)` correction.
 
-O jitter é aplicado na escala **logit** (`boundary = :logit`, default): perto
-de 0 e 1 o passo em escala de probabilidade encolhe sozinho, então a nula não
-empurra a massa das seções quase unânimes para o miolo, onde as frações coarse
-são densas. Com jitter em escala de probabilidade (`:reflect`), sob shares em U
-o erro tipo I caía a 0,000 e o poder a ε = 2 % era 0,48 contra 0,67.
+The jitter is applied on the **logit** scale (`boundary = :logit`, the
+default): near 0 and 1 the step on the probability scale shrinks by itself, so
+the null does not push mass from near-unanimous stations toward the middle,
+where coarse fractions are dense. With jitter on the probability scale
+(`:reflect`), under U-shaped shares the type I error fell to 0.000 and power at
+ε = 2 % was 0.48 against 0.67.
 
-Duas nulas estão disponíveis. `null = :kernel` (default) perturba os
-percentuais observados. `null = :betabinomial` implementa o modelo do pacote
-`spikes`, do próprio Rozenas: mistura de Beta-Binomiais ajustada por EM e
-reamostragem da posterior `Beta(y+α, n−y+β)`, que deconvolui o ruído binomial.
+Two nulls are available. `null = :kernel` (the default) perturbs the observed
+shares. `null = :betabinomial` implements the model from Rozenas's own `spikes`
+package: a mixture of Beta-Binomials fitted by EM and resampling from the
+`Beta(y+α, n−y+β)` posterior, which deconvolves the binomial noise.
 
-Em simulação as duas são equivalentes. Em dados reais a paramétrica pode
-desajustar numa faixa fina de percentuais e inventar excesso ali — nos dados
-russos de 2012 ela subestima a cauda esquerda em 3,8× e produz dez frações
-falsamente significativas. Toda mistura ajustada carrega o diagnóstico
-`misfit`, e o pacote avisa quando passa de 2. Os excessos por fração são
-exploratórios: use os `qvalues` (Benjamini–Hochberg), não os z brutos.
+In simulation the two are equivalent. On real data the parametric one can
+misfit a narrow band of shares and manufacture excess there — on the Russian
+2012 data it underestimates the left tail by 3.8× and produces ten falsely
+significant fractions. Every fitted mixture carries a `misfit` diagnostic, and
+the package warns when it exceeds 2. Per-fraction excesses are exploratory: use
+the `qvalues` (Benjamini–Hochberg), not the raw z-scores.
 
-**Benford.** χ² de aderência + MAD com limiares de conformidade de
-Nigrini (2012). Default é o **2º dígito** (2BL, Mebane 2008) com
-`null = :resampled`. Contagens eleitorais limpas **não** seguem a lei de
-Benford quando as seções têm tamanho homogêneo: contra o null clássico o teste
-rejeita eleições simuladas limpas em 72 % dos casos (1BL: 100 %). O null
-reamostrado — jitter gaussiano em `log10(contagem)` — devolve a taxa a 0,05
-e responde à pergunta útil: "o dígito é anômalo *dado* o formato empírico das
-contagens?". Use `null = :benford` apenas como estatística descritiva.
+**Benford.** χ² goodness-of-fit plus MAD with Nigrini's (2012) conformity
+thresholds. The default is the **2nd digit** (2BL, Mebane 2008) with
+`null = :resampled`. Clean electoral counts do **not** follow Benford's law
+when polling stations are homogeneous in size: against the classical null the
+test rejects clean simulated elections in 72 % of cases (1BL: 100 %). The
+resampled null — Gaussian jitter on `log10(count)` — brings the rate back to
+0.05 and answers the useful question: "is the digit anomalous *given* the
+empirical shape of the counts?". Use `null = :benford` as a descriptive
+statistic only.
 
-**Fingerprint (Klimek et al. 2012).** Histograma 2-D de seções por
-comparecimento (eixo x) e percentual de votos no vencedor (eixo y). Um
-aglomerado único e compacto é o padrão limpo; um borrão para o canto superior
-direito indica manipulação incremental, e um segundo aglomerado em
-(100 %, 100 %) indica manipulação extrema. Traz também a assimetria e a curtose
-da taxa logarítmica de voto `ν = log((N−W)/W)`, que em eleições limpas ficam
-perto de (0, 3).
+**Fingerprint (Klimek et al. 2012).** A 2-D histogram of polling stations by
+turnout (x axis) and winner vote share (y axis). A single compact cluster is
+the clean pattern; a smear toward the top-right corner indicates incremental
+manipulation, and a second cluster at (100 %, 100 %) indicates extreme
+manipulation. It also reports the skewness and kurtosis of the logarithmic vote
+rate `ν = log((N−W)/W)`, which sit near (0, 3) in clean elections.
 
-Exige uma entrada a mais que os demais testes — o **eleitorado** por seção:
-
-```julia
-election_fingerprint(winner_votes, ballots_cast, electorate)
-```
-
-É um diagnóstico visual, não um teste: não produz p-valor. O modelo
-paramétrico de fraude `(fᵢ, f_e)` do artigo não está implementado — sua
-especificação está no Supporting Information, fora do preprint.
-
-**Último dígito.** χ² contra uniforme em 0:9, excluindo contagens
-pequenas (`min_value = 10`). Reporta também `freq{0,5}` (esperado ≈ 0.20;
-números fabricados superusam 0 e 5). Calibrado para seções com ≥ 60 eleitores.
-O **penúltimo** dígito exige suavidade da densidade numa escala de 100 e por
-isso é opt-in: com seções de 150–900 eleitores seu null uniforme rejeita
-eleições limpas em 50 % dos casos (100 % com seções de 100–200). O campo
-`null_valid` sinaliza quando a condição não é atendida.
-
-## Meça a calibração antes de concluir
-
-A validade do null de cada teste depende do formato da sua distribuição de
-contagens, e nenhuma estatística simples prediz quando ele falha. Em vez de
-prometer, o pacote mede:
+It requires one input more than the other tests — the **electorate** per
+polling station:
 
 ```julia
-calibration_check(votes, totals)   # simula eleições limpas com os SEUS totais
+election_fingerprint(winner_votes, valid_votes, electorate)
 ```
 
-Ele reporta a taxa de erro tipo I que cada teste de fato entrega nesses dados.
-`anticonservador` significa que o teste rejeita eleições limpas acima de α —
-não conclua fraude a partir dele. `forensics_report` roda essa checagem por
-default e a imprime antes dos p-valores.
+It is a visual diagnostic, not a test: it produces no p-value. The paper's
+parametric fraud model `(fᵢ, f_e)` is not implemented — its specification lives
+in the Supporting Information, outside the preprint.
 
-## Advertências
+**Last digit.** χ² against a uniform on 0:9, excluding small counts
+(`min_value = 10`). Also reports `freq{0,5}` (expected ≈ 0.20; fabricated
+numbers overuse 0 and 5). Calibrated for stations with ≥ 60 voters. The
+**penultimate** digit requires the density to be smooth on a scale of 100 and
+is therefore opt-in: with stations of 150–900 voters its uniform null rejects
+clean elections in 50 % of cases (100 % with stations of 100–200). The
+`null_valid` field flags when the condition is not met.
 
-Nenhum teste isolado prova fraude. Falsos positivos surgem de seções
-pequenas, arredondamento administrativo e agregação; leia os testes em
-conjunto e no contexto institucional. O jitter em torno dos percentuais
-observados torna o teste de Rozenas levemente conservador sob fraude
-maciça — rejeições são evidência forte.
+## Measure the calibration before concluding
 
-**O que estes testes não detectam.** Nenhum deles tem poder contra *ballot
-stuffing* proporcional: em simulação, adicionar 15 % de votos a 20 % das seções
-deixa os quatro testes em α. Rozenas detecta metas percentuais redondas; o
-último dígito detecta arredondamento decimal. Fraude sem assinatura em dígitos
-ou em frações exatas passa despercebida.
+The validity of each test's null depends on the shape of your count
+distribution, and no simple statistic predicts when it fails. Rather than
+promise, the package measures:
 
-Os excessos por fração exibidos pelo teste de Rozenas são **exploratórios**:
-sob H₀ o maior z entre as 31 frações tem mediana 2,4 e passa de 2 em 68 % das
-eleições limpas. Use os `qvalues` (Benjamini–Hochberg), não os z brutos.
+```julia
+calibration_check(votes, totals)   # simulates clean elections with YOUR totals
+```
 
-## Validação
+It reports the type I error rate each test actually delivers on that data. The
+verdict `:anticonservador` means the test rejects clean elections above α — do
+not conclude fraud from it. `forensics_report` runs this check by default and
+prints it before any p-value.
 
-`validation/` contém os scripts de calibração e poder que sustentam as
-afirmações acima. Rode-os com `julia -t auto validation/<script>.jl`.
+> **Note on language.** The public API, docstrings, and returned symbols
+> (`:calibrado`, `:conservador`, `:anticonservador`) are in Portuguese, as is
+> the terminal output. Only this README is in English.
 
-## Referências
+## Caveats
+
+No single test proves fraud. False positives arise from small polling stations,
+administrative rounding, and aggregation; read the tests together and in
+institutional context. Jittering around the observed shares makes the Rozenas
+test slightly conservative under massive fraud — a rejection is therefore
+strong evidence.
+
+**What these tests do not detect.** None of them has power against
+proportional ballot stuffing: in simulation, adding 15 % of votes to 20 % of
+polling stations leaves all four tests at α. Rozenas detects round percentage
+targets; the last-digit test detects decimal rounding. Fraud that leaves no
+signature in digits or in exact fractions goes unnoticed.
+
+The per-fraction excesses reported by the Rozenas test are **exploratory**:
+under H₀ the largest z among the 31 fractions has median 2.4 and exceeds 2 in
+68 % of clean elections. Use the `qvalues` (Benjamini–Hochberg), not the raw
+z-scores.
+
+## Validation
+
+`validation/` contains the calibration and power scripts backing the claims
+above. Run them with `julia -t auto validation/<script>.jl`.
+
+## References
 
 - Rozenas, A. (2017). Detecting Election Fraud from Irregularities in
   Vote-Share Distributions. *Political Analysis* 25(1), 41–56.
@@ -156,3 +176,14 @@ afirmações acima. Rode-os com `julia -t auto validation/<script>.jl`.
 - Nigrini, M. (2012). *Benford's Law*. Wiley.
 - Deckert, J.; Myagkov, M.; Ordeshook, P. (2011). Benford's Law and the
   Detection of Election Fraud. *Political Analysis* 19(3), 245–268.
+- Klimek, P.; Yegorov, Y.; Hanel, R.; Thurner, S. (2012). Statistical
+  Detection of Systematic Election Irregularities. *PNAS* 109(41),
+  16469–16473.
+- Benjamini, Y.; Hochberg, Y. (1995). Controlling the False Discovery Rate.
+  *JRSS B* 57(1), 289–300.
+- Silverman, B. (1986). *Density Estimation for Statistics and Data
+  Analysis*. Chapman & Hall.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
